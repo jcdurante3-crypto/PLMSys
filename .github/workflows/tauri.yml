@@ -50,7 +50,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          packageManager: npm
+          tauriScript: npm run tauri
           projectPath: .
           tagName: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
           releaseName: 'Plate Lifecycle Management System v__VERSION__'
