@@ -17,6 +17,10 @@ export function isTauriEnv(): boolean {
   return typeof window !== 'undefined' && ('__TAURI_INTERNALS__' in window || '__TAURI__' in window);
 }
 
+export function isElectronEnv(): boolean {
+  return typeof window !== 'undefined' && 'electronAPI' in window;
+}
+
 export interface ITable<T extends { id: string }, Key = string> {
   toArray(): Promise<T[]>;
   put(item: T): Promise<Key>;
@@ -152,6 +156,14 @@ export class AppDatabaseWrapper {
   async getDbInfo(): Promise<{ dbPath: string; appDir: string; isInsideAppFolder: boolean; backend: string }> {
     if (isTauriEnv()) {
       return invoke<{ dbPath: string; appDir: string; isInsideAppFolder: boolean; backend: string }>('db_get_info');
+    }
+    if (isElectronEnv()) {
+      return {
+        dbPath: 'IndexedDB (Electron Profile)',
+        appDir: 'Electron Application Container',
+        isInsideAppFolder: true,
+        backend: 'Dexie.js / IndexedDB (Electron Desktop)'
+      };
     }
     return {
       dbPath: 'IndexedDB (Browser)',
