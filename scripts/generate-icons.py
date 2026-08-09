@@ -153,7 +153,7 @@ def generate_icons(master_png="assets/app-icon.png", target_ico="src-tauri/icons
 
     print(f"Generating MSVC RC.EXE-compatible Windows ICO file from {master_png}...")
     src_w, src_h, src_pixels = decode_png(master_png)
-    sizes = [16, 24, 32, 48, 64, 128]
+    sizes = [16, 24, 32, 48, 64, 128, 256]
 
     image_chunks = []
     for size in sizes:
@@ -170,8 +170,8 @@ def generate_icons(master_png="assets/app-icon.png", target_ico="src-tauri/icons
     dir_bytes = bytearray()
     for i, size in enumerate(sizes):
         chunk_len = len(image_chunks[i])
-        w_byte = size
-        h_byte = size
+        w_byte = 0 if size == 256 else size
+        h_byte = 0 if size == 256 else size
         bpp = 32
         planes = 1
         dir_bytes += struct.pack('<BBBBHHII',

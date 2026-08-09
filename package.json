@@ -9,8 +9,9 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "icons": "python3 scripts/generate-icons.py assets/app-icon.png src-tauri/icons/icon.ico",
-    "validate:ico": "python3 scripts/validate-ico.py src-tauri/icons/icon.ico",
+    "icons:generate": "python3 scripts/generate-icons.py assets/app-icon.png src-tauri/icons/icon.ico",
+    "icons:validate": "python3 scripts/validate-ico.py src-tauri/icons/icon.ico",
+    "icons": "npm run icons:generate && npm run icons:validate",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build"
