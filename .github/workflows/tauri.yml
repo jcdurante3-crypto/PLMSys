@@ -49,8 +49,9 @@ jobs:
         with:
           python-version: '3.x'
 
-      - name: Generate & Validate Windows ICO resource file
+      - name: Validate Master PNG & Generate/Validate Windows ICO resource file
         run: |
+          python scripts/validate-png.py assets/app-icon.png
           python scripts/generate-icons.py assets/app-icon.png src-tauri/icons/icon.ico
           python scripts/validate-ico.py src-tauri/icons/icon.ico
 

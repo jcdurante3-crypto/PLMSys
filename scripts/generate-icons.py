@@ -5,74 +5,172 @@ import struct
 import subprocess
 
 def decode_png(filepath):
+    if not os.path.exists(filepath):
+        print(f"ERROR: Master PNG file not found at {filepath}")
+        sys.exit(1)
+        
+    file_size = os.path.getsize(filepath)
+    if file_size == 0:
+        print(f"ERROR: Master PNG file {filepath} is empty (0 bytes).")
+        sys.exit(1)
+
     with open(filepath, 'rb') as f:
         data = f.read()
-    if not data.startswith(b'\x89PNG\r\n\x1a\n'):
-        raise ValueError('Not a PNG file')
-    
+
+    # Detect Git LFS pointer text file
+    if data.startswith(b'version https://git-lfs') or data.startswith(b'version https://'):
+        text_sample = data[:200].decode('utf-8', errors='ignore').strip()
+        print(f"ERROR: {filepath} is a Git LFS pointer file, not a binary PNG file!")
+        print(f"File contents preview:\n{text_sample}")
+        print("Please ensure Git LFS files are checked out in CI (e.g. actions/checkout with lfs: true).")
+        sys.exit(1)
+
+    # Check PNG signature
+    png_sig = b'\x89PNG\r\n\x1a\n'
+    if not data.startswith(png_sig):
+        first_bytes = data[:16].hex(' ')
+        print(f"ERROR: {filepath} does not contain a valid PNG magic signature!")
+        print(f"Expected signature: {png_sig.hex(' ')}")
+        print(f"Detected signature: {first_bytes}")
+        sys.exit(1)
+
     offset = 8
     width = height = bit_depth = color_type = compression = filter_method = interlace = None
     idat_chunks = []
-    
+    plte_chunk = None
+    trns_chunk = None
+
     while offset < len(data):
+        if offset + 8 > len(data):
+            break
         length, chunk_type = struct.unpack('>I4s', data[offset:offset+8])
         chunk_data = data[offset+8:offset+8+length]
         offset += 12 + length
-        
+
         if chunk_type == b'IHDR':
             width, height, bit_depth, color_type, compression, filter_method, interlace = struct.unpack('>IIBBBBB', chunk_data)
+        elif chunk_type == b'PLTE':
+            plte_chunk = chunk_data
+        elif chunk_type == b'tRNS':
+            trns_chunk = chunk_data
         elif chunk_type == b'IDAT':
             idat_chunks.append(chunk_data)
         elif chunk_type == b'IEND':
             break
-            
-    decompressed = zlib.decompress(b''.join(idat_chunks))
-    stride = width * 4 + 1
-    pixels = bytearray(width * height * 4)
-    
-    prev_row = bytearray(width * 4)
+
+    if width is None or height is None:
+        print(f"ERROR: {filepath} is missing IHDR chunk.")
+        sys.exit(1)
+
+    if not idat_chunks:
+        print(f"ERROR: {filepath} is missing IDAT chunks.")
+        sys.exit(1)
+
+    if interlace != 0:
+        print(f"ERROR: Interlaced PNGs are not supported. Please resave {filepath} as non-interlaced.")
+        sys.exit(1)
+
+    try:
+        decompressed = zlib.decompress(b''.join(idat_chunks))
+    except Exception as e:
+        print(f"ERROR: Failed to decompress PNG IDAT chunks in {filepath}: {e}")
+        sys.exit(1)
+
+    bpp_map = {0: 1, 2: 3, 3: 1, 4: 2, 6: 4}
+    if color_type not in bpp_map:
+        print(f"ERROR: Unsupported PNG color type {color_type} in {filepath}.")
+        sys.exit(1)
+
+    bpp = bpp_map[color_type]
+    stride = width * bpp + 1
+    expected_size = stride * height
+
+    if len(decompressed) < expected_size:
+        print(f"ERROR: Truncated PNG data in {filepath} (expected {expected_size} bytes, got {len(decompressed)}).")
+        sys.exit(1)
+
+    raw_rows = []
+    prev_row = bytearray(width * bpp)
+
     for y in range(height):
         row_start = y * stride
         filter_type = decompressed[row_start]
         row_data = decompressed[row_start+1:row_start+stride]
-        
-        curr_row = bytearray(width * 4)
-        for x in range(width * 4):
+
+        curr_row = bytearray(width * bpp)
+        for x in range(width * bpp):
             filt = row_data[x]
-            if filter_type == 0: val = filt
-            elif filter_type == 1: val = (filt + (curr_row[x - 4] if x >= 4 else 0)) & 0xff
-            elif filter_type == 2: val = (filt + prev_row[x]) & 0xff
-            elif filter_type == 3: val = (filt + ((curr_row[x - 4] if x >= 4 else 0) + prev_row[x]) // 2) & 0xff
-            elif filter_type == 4:
-                left = curr_row[x - 4] if x >= 4 else 0
+            if filter_type == 0:
+                val = filt
+            elif filter_type == 1:
+                left = curr_row[x - bpp] if x >= bpp else 0
+                val = (filt + left) & 0xff
+            elif filter_type == 2:
                 up = prev_row[x]
-                upleft = prev_row[x - 4] if x >= 4 else 0
+                val = (filt + up) & 0xff
+            elif filter_type == 3:
+                left = curr_row[x - bpp] if x >= bpp else 0
+                up = prev_row[x]
+                val = (filt + (left + up) // 2) & 0xff
+            elif filter_type == 4:
+                left = curr_row[x - bpp] if x >= bpp else 0
+                up = prev_row[x]
+                upleft = prev_row[x - bpp] if x >= bpp else 0
                 p = left + up - upleft
                 pa, pb, pc = abs(p - left), abs(p - up), abs(p - upleft)
                 pr = left if (pa <= pb and pa <= pc) else (up if pb <= pc else upleft)
                 val = (filt + pr) & 0xff
+            else:
+                print(f"ERROR: Unknown PNG filter type {filter_type} in {filepath}.")
+                sys.exit(1)
             curr_row[x] = val
-            
-        pixels[y*width*4:(y+1)*width*4] = curr_row
+
+        raw_rows.append(curr_row)
         prev_row = curr_row
-        
-    return width, height, bytes(pixels)
+
+    rgba_pixels = bytearray(width * height * 4)
+    out_idx = 0
+
+    for y in range(height):
+        row = raw_rows[y]
+        for x in range(width):
+            if color_type == 6:  # RGBA
+                r, g, b, a = row[x*4], row[x*4+1], row[x*4+2], row[x*4+3]
+            elif color_type == 2:  # RGB
+                r, g, b, a = row[x*3], row[x*3+1], row[x*3+2], 255
+            elif color_type == 0:  # Grayscale
+                v = row[x]
+                r, g, b, a = v, v, v, 255
+            elif color_type == 3:  # Palette
+                idx = row[x]
+                if plte_chunk and idx * 3 + 2 < len(plte_chunk):
+                    r, g, b = plte_chunk[idx*3], plte_chunk[idx*3+1], plte_chunk[idx*3+2]
+                else:
+                    r = g = b = 0
+                a = trns_chunk[idx] if (trns_chunk and idx < len(trns_chunk)) else 255
+            rgba_pixels[out_idx] = r
+            rgba_pixels[out_idx+1] = g
+            rgba_pixels[out_idx+2] = b
+            rgba_pixels[out_idx+3] = a
+            out_idx += 4
+
+    return width, height, bytes(rgba_pixels)
 
 def resample_rgba(src_w, src_h, src_pixels, dst_w, dst_h):
     if src_w == dst_w and src_h == dst_h:
         return src_pixels
-    
+
     dst_pixels = bytearray(dst_w * dst_h * 4)
     x_ratio = src_w / dst_w
     y_ratio = src_h / dst_h
-    
+
     for dy in range(dst_h):
         for dx in range(dst_w):
             sx_start = int(dx * x_ratio)
             sx_end = max(sx_start + 1, int((dx + 1) * x_ratio))
             sy_start = int(dy * y_ratio)
             sy_end = max(sy_start + 1, int((dy + 1) * y_ratio))
-            
+
             r_sum = g_sum = b_sum = a_sum = count = 0
             for sy in range(sy_start, min(sy_end, src_h)):
                 for sx in range(sx_start, min(sx_end, src_w)):
@@ -82,14 +180,14 @@ def resample_rgba(src_w, src_h, src_pixels, dst_w, dst_h):
                     b_sum += src_pixels[idx+2]
                     a_sum += src_pixels[idx+3]
                     count += 1
-            
+
             dst_idx = (dy * dst_w + dx) * 4
             if count > 0:
                 dst_pixels[dst_idx] = r_sum // count
                 dst_pixels[dst_idx+1] = g_sum // count
                 dst_pixels[dst_idx+2] = b_sum // count
                 dst_pixels[dst_idx+3] = a_sum // count
-                
+
     return bytes(dst_pixels)
 
 def make_dib_entry_32bit(w, h, rgba_bytes):
@@ -97,7 +195,7 @@ def make_dib_entry_32bit(w, h, rgba_bytes):
     and_row_bytes = ((w + 31) // 32) * 4
     and_size = and_row_bytes * h
     bi_size_image = xor_size + and_size
-    
+
     header = struct.pack('<IiiHHIIiiII',
         40,             # biSize
         w,              # biWidth
@@ -109,7 +207,7 @@ def make_dib_entry_32bit(w, h, rgba_bytes):
         0, 0,           # biXPelsPerMeter, biYPelsPerMeter
         0, 0            # biClrUsed, biClrImportant
     )
-    
+
     xor_bytes = bytearray(xor_size)
     for y in range(h):
         src_y = y
@@ -125,7 +223,7 @@ def make_dib_entry_32bit(w, h, rgba_bytes):
             xor_bytes[dst_idx+1] = g
             xor_bytes[dst_idx+2] = r
             xor_bytes[dst_idx+3] = a
-            
+
     and_bytes = bytearray(and_size)
     for y in range(h):
         src_y = y
@@ -137,7 +235,7 @@ def make_dib_entry_32bit(w, h, rgba_bytes):
                 byte_idx = (dst_y * and_row_bytes) + (x // 8)
                 bit_idx = 7 - (x % 8)
                 and_bytes[byte_idx] |= (1 << bit_idx)
-                
+
     return header + xor_bytes + and_bytes
 
 def generate_icons(master_png="assets/app-icon.png", target_ico="src-tauri/icons/icon.ico"):
