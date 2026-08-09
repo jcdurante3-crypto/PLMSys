@@ -109,7 +109,11 @@ export const Navbar: React.FC<NavbarProps> = ({
           <div className="flex items-center space-x-2">
             <div className="flex items-center gap-2 text-xs text-[#8E9299] px-3">
               <span className="font-semibold text-white">{currentUser.name}</span>
-              <span className="bg-[#191D28] px-2 py-0.5 rounded text-[10px] uppercase">{currentUser.role}</span>
+              {currentUser.name.toUpperCase() !== currentUser.role && 
+               !(currentUser.role === 'ADMIN' && (currentUser.name === 'Administrator' || currentUser.name === 'Admin')) && 
+               !(currentUser.role === 'OPERATOR' && currentUser.name === 'Operator') && (
+                <span className="bg-[#191D28] px-2 py-0.5 rounded text-[10px] uppercase">{currentUser.role}</span>
+              )}
             </div>
             
             <button
