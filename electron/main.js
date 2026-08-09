@@ -14,7 +14,7 @@ function createWindow() {
     minWidth: 1024,
     minHeight: 600,
     title: 'Plate Lifecycle Management System',
-    icon: path.join(__dirname, '../src-tauri/icons/icon.png'),
+    icon: path.join(__dirname, '../build/icons/icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,

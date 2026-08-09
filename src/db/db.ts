@@ -1,5 +1,4 @@
 import Dexie, { type Table } from 'dexie';
-import { invoke } from '@tauri-apps/api/core';
 import {
   SetRecord,
   PositionRecord,
@@ -12,10 +11,6 @@ import {
   AuditRecord,
   Personnel
 } from '../types';
-
-export function isTauriEnv(): boolean {
-  return typeof window !== 'undefined' && ('__TAURI_INTERNALS__' in window || '__TAURI__' in window);
-}
 
 export function isElectronEnv(): boolean {
   return typeof window !== 'undefined' && 'electronAPI' in window;
@@ -54,32 +49,6 @@ class DexieTableWrapper<T extends { id: string }> implements ITable<T, string> {
   }
   async count(): Promise<number> {
     return this.dexieTable.count();
-  }
-}
-
-class TauriSqliteTableWrapper<T extends { id: string }> implements ITable<T, string> {
-  constructor(private tableName: string) {}
-
-  async toArray(): Promise<T[]> {
-    return invoke<T[]>('db_to_array', { table: this.tableName });
-  }
-  async put(item: T): Promise<string> {
-    return invoke<string>('db_put', { table: this.tableName, item });
-  }
-  async bulkPut(items: T[]): Promise<string[]> {
-    return invoke<string[]>('db_bulk_put', { table: this.tableName, items });
-  }
-  async update(key: string, changes: Partial<T>): Promise<number> {
-    return invoke<number>('db_update', { table: this.tableName, key, changes });
-  }
-  async delete(key: string): Promise<void> {
-    await invoke<number>('db_delete', { table: this.tableName, key });
-  }
-  async clear(): Promise<void> {
-    await invoke<void>('db_clear', { table: this.tableName });
-  }
-  async count(): Promise<number> {
-    return invoke<number>('db_count', { table: this.tableName });
   }
 }
 
@@ -127,36 +96,20 @@ export class AppDatabaseWrapper {
   private dexieDb?: PlateDatabaseDexie;
 
   constructor() {
-    if (isTauriEnv()) {
-      this.sets = new TauriSqliteTableWrapper<SetRecord>('sets');
-      this.positions = new TauriSqliteTableWrapper<PositionRecord>('positions');
-      this.plates = new TauriSqliteTableWrapper<PlateRecord>('plates');
-      this.plateInstallations = new TauriSqliteTableWrapper<PlateInstallationRecord>('plateInstallations');
-      this.plateRemovals = new TauriSqliteTableWrapper<PlateRemovalRecord>('plateRemovals');
-      this.dailyProduction = new TauriSqliteTableWrapper<DailyProductionRecord>('dailyProduction');
-      this.replacements = new TauriSqliteTableWrapper<ReplacementRecord>('replacements');
-      this.jobOrders = new TauriSqliteTableWrapper<JobOrderRecord>('jobOrders');
-      this.auditLogs = new TauriSqliteTableWrapper<AuditRecord>('auditLogs');
-      this.personnel = new TauriSqliteTableWrapper<Personnel>('personnel');
-    } else {
-      this.dexieDb = new PlateDatabaseDexie();
-      this.sets = new DexieTableWrapper<SetRecord>(this.dexieDb.sets);
-      this.positions = new DexieTableWrapper<PositionRecord>(this.dexieDb.positions);
-      this.plates = new DexieTableWrapper<PlateRecord>(this.dexieDb.plates);
-      this.plateInstallations = new DexieTableWrapper<PlateInstallationRecord>(this.dexieDb.plateInstallations);
-      this.plateRemovals = new DexieTableWrapper<PlateRemovalRecord>(this.dexieDb.plateRemovals);
-      this.dailyProduction = new DexieTableWrapper<DailyProductionRecord>(this.dexieDb.dailyProduction);
-      this.replacements = new DexieTableWrapper<ReplacementRecord>(this.dexieDb.replacements);
-      this.jobOrders = new DexieTableWrapper<JobOrderRecord>(this.dexieDb.jobOrders);
-      this.auditLogs = new DexieTableWrapper<AuditRecord>(this.dexieDb.auditLogs);
-      this.personnel = new DexieTableWrapper<Personnel>(this.dexieDb.personnel);
-    }
+    this.dexieDb = new PlateDatabaseDexie();
+    this.sets = new DexieTableWrapper<SetRecord>(this.dexieDb.sets);
+    this.positions = new DexieTableWrapper<PositionRecord>(this.dexieDb.positions);
+    this.plates = new DexieTableWrapper<PlateRecord>(this.dexieDb.plates);
+    this.plateInstallations = new DexieTableWrapper<PlateInstallationRecord>(this.dexieDb.plateInstallations);
+    this.plateRemovals = new DexieTableWrapper<PlateRemovalRecord>(this.dexieDb.plateRemovals);
+    this.dailyProduction = new DexieTableWrapper<DailyProductionRecord>(this.dexieDb.dailyProduction);
+    this.replacements = new DexieTableWrapper<ReplacementRecord>(this.dexieDb.replacements);
+    this.jobOrders = new DexieTableWrapper<JobOrderRecord>(this.dexieDb.jobOrders);
+    this.auditLogs = new DexieTableWrapper<AuditRecord>(this.dexieDb.auditLogs);
+    this.personnel = new DexieTableWrapper<Personnel>(this.dexieDb.personnel);
   }
 
   async getDbInfo(): Promise<{ dbPath: string; appDir: string; isInsideAppFolder: boolean; backend: string }> {
-    if (isTauriEnv()) {
-      return invoke<{ dbPath: string; appDir: string; isInsideAppFolder: boolean; backend: string }>('db_get_info');
-    }
     if (isElectronEnv()) {
       return {
         dbPath: 'IndexedDB (Electron Profile)',

@@ -21,7 +21,7 @@
         "arch": ["x64"]
       }
     ],
-    "icon": "src-tauri/icons/icon.ico"
+    "icon": "build/icons/icon.ico"
   },
   "nsis": {
     "oneClick": false,
@@ -35,10 +35,10 @@
   },
   "mac": {
     "target": ["dmg", "zip"],
-    "icon": "src-tauri/icons/icon.icns"
+    "icon": "build/icons/icon.icns"
   },
   "linux": {
     "target": ["AppImage", "deb"],
-    "icon": "src-tauri/icons/icon.png"
+    "icon": "build/icons/icon.png"
   }
 }
