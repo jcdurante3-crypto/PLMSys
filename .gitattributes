@@ -1,0 +1,5 @@
+# Force LF line endings and binary handling for image assets across all platforms
+* text=auto eol=lf
+*.png binary
+*.ico binary
+*.icns binary

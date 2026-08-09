@@ -50,6 +50,7 @@ jobs:
           python-version: '3.x'
 
       - name: Validate Master PNG & Generate/Validate Windows ICO resource file
+        shell: bash
         run: |
           python scripts/validate-png.py assets/app-icon.png
           python scripts/generate-icons.py assets/app-icon.png src-tauri/icons/icon.ico

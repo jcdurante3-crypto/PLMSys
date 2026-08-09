@@ -241,16 +241,30 @@ def make_dib_entry_32bit(w, h, rgba_bytes):
 def generate_icons(master_png="assets/app-icon.png", target_ico="src-tauri/icons/icon.ico"):
     if not os.path.exists(master_png):
         print(f"Error: Master PNG file not found at {master_png}")
+        if os.path.exists(target_ico):
+            os.remove(target_ico)
         sys.exit(1)
 
+    # 1. Decode & validate Master PNG FIRST before attempting generation or touching target files
+    print(f"Reading and validating Master PNG icon: {master_png}...")
+    try:
+        src_w, src_h, src_pixels = decode_png(master_png)
+    except Exception as e:
+        print(f"ERROR: Failed to decode Master PNG ({master_png}): {e}")
+        if os.path.exists(target_ico):
+            os.remove(target_ico)
+        sys.exit(1)
+
+    # 2. Try running Tauri CLI icon generation if available
     print(f"Running Tauri CLI icon generation from {master_png}...")
     try:
-        subprocess.run(["npx", "tauri", "icon", master_png], check=True)
+        use_shell = (os.name == 'nt')
+        subprocess.run(["npx", "tauri", "icon", master_png], check=True, shell=use_shell)
     except Exception as e:
-        print(f"Warning: npx tauri icon failed: {e}")
+        print(f"Notice: npx tauri icon warning (continuing with custom MSVC ICO generator): {e}")
 
+    # 3. Generate MSVC RC.EXE-compatible Windows ICO file from decoded pixels
     print(f"Generating MSVC RC.EXE-compatible Windows ICO file from {master_png}...")
-    src_w, src_h, src_pixels = decode_png(master_png)
     sizes = [16, 24, 32, 48, 64, 128, 256]
 
     image_chunks = []
@@ -280,9 +294,11 @@ def generate_icons(master_png="assets/app-icon.png", target_ico="src-tauri/icons
     ico_file = header + dir_bytes + b''.join(image_chunks)
 
     os.makedirs(os.path.dirname(target_ico), exist_ok=True)
-    with open(target_ico, 'wb') as f:
+    tmp_ico = target_ico + ".tmp"
+    with open(tmp_ico, 'wb') as f:
         f.write(ico_file)
 
+    os.replace(tmp_ico, target_ico)
     print(f"Successfully generated MSVC RC.EXE compatible ICO file: {target_ico} ({len(ico_file)} bytes)")
 
 if __name__ == "__main__":
