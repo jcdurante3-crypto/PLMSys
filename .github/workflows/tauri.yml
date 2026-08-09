@@ -44,6 +44,9 @@ jobs:
       - name: Build frontend
         run: npm run build
 
+      - name: Validate Windows ICO resource file
+        run: node -e "require('child_process').execSync('python3 scripts/validate-ico.py src-tauri/icons/icon.ico || python scripts/validate-ico.py src-tauri/icons/icon.ico', {stdio: 'inherit'})"
+
       - name: Build Tauri App & Draft Release
         uses: tauri-apps/tauri-action@v0
         id: tauri_build
