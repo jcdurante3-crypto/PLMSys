@@ -916,7 +916,7 @@ export default function App() {
   };
 
   const handleAdminLogin = () => {
-    setCurrentUser({ name: 'Administrator', role: 'ADMIN' });
+    setCurrentUser({ name: 'Admin', role: 'ADMIN' });
     setShowAdminLoginModal(false);
   };
 

@@ -12,7 +12,6 @@
   "app": {
     "windows": [
       {
-        "label": "main",
         "title": "Plate Lifecycle Management System",
         "width": 1280,
         "height": 800,
