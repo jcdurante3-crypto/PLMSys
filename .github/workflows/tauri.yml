@@ -39,7 +39,10 @@ jobs:
           workspaces: './src-tauri -> target'
 
       - name: Install frontend dependencies
-        run: npm install
+        run: npm ci
+
+      - name: Build frontend
+        run: npm run build
 
       - name: Build Tauri App & Draft Release
         uses: tauri-apps/tauri-action@v0
@@ -47,6 +50,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
+          packageManager: npm
+          projectPath: .
           tagName: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
           releaseName: 'Plate Lifecycle Management System v__VERSION__'
           releaseBody: 'Windows desktop release for Plate Lifecycle Management System.'
