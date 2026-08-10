@@ -1,8 +1,6 @@
-import React, { useRef, useState, useEffect } from 'react';
-import { Download, Upload, Shield, Database, Clock, Activity, AlertCircle, HardDrive, CheckCircle2 } from 'lucide-react';
+import React, { useRef, useState } from 'react';
+import { Download, Upload, Shield, Database, Clock, Activity, AlertCircle, RefreshCw, CheckCircle2, X } from 'lucide-react';
 import { motion } from 'motion/react';
-import { db } from '../db/db';
-import { FactoryResetModal } from './FactoryResetModal';
 
 interface AdminDashboardProps {
   onExportBackup: () => Promise<void>;
@@ -12,30 +10,27 @@ interface AdminDashboardProps {
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExportBackup, onImportBackup, onRestoreFactory }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [dbInfo, setDbInfo] = useState<{ dbPath: string; appDir: string; isInsideAppFolder: boolean; backend: string } | null>(null);
-  const [showFactoryModal, setShowFactoryModal] = useState(false);
-  const [stats, setStats] = useState({ sets: 0, plates: 0, productionLogs: 0, auditLogs: 0, personnel: 0 });
+  const [showRestoreModal, setShowRestoreModal] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
+  const [restoreSuccess, setRestoreSuccess] = useState(false);
+  const [restoreError, setRestoreError] = useState('');
 
-  useEffect(() => {
-    db.getDbInfo().then(setDbInfo);
-    Promise.all([
-      db.sets.count(),
-      db.plates.count(),
-      db.dailyProduction.count(),
-      db.auditLogs.count(),
-      db.personnel.count(),
-    ]).then(([sets, plates, productionLogs, auditLogs, personnel]) => {
-      setStats({ sets, plates, productionLogs, auditLogs, personnel });
-    });
-  }, []);
-
-  const handleRestoreClick = () => {
-    setShowFactoryModal(true);
-  };
-
-  const handleConfirmReset = async () => {
-    await onRestoreFactory();
-    setShowFactoryModal(false);
+  const handleConfirmRestore = async () => {
+    setIsRestoring(true);
+    setRestoreError('');
+    try {
+      await onRestoreFactory();
+      setRestoreSuccess(true);
+      setTimeout(() => {
+        setRestoreSuccess(false);
+        setShowRestoreModal(false);
+      }, 2000);
+    } catch (err) {
+      console.error('Error during factory reset:', err);
+      setRestoreError(err instanceof Error ? err.message : 'Failed to restore factory settings.');
+    } finally {
+      setIsRestoring(false);
+    }
   };
 
   return (
@@ -76,7 +71,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExportBackup, 
                   <p className="text-xs text-[#8E9299] mb-3">Download a complete snapshot of the database in JSON format for external storage.</p>
                   <button 
                     onClick={onExportBackup}
-                    className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-bold transition-all shadow-lg shadow-indigo-500/20"
+                    className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-bold transition-all shadow-lg shadow-indigo-500/20 cursor-pointer"
                   >
                     <Download className="w-4 h-4" />
                     Export Backup
@@ -100,7 +95,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExportBackup, 
                   />
                   <button 
                     onClick={() => fileInputRef.current?.click()}
-                    className="flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-sm font-bold transition-all shadow-lg shadow-amber-500/20"
+                    className="flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-sm font-bold transition-all shadow-lg shadow-amber-500/20 cursor-pointer"
                   >
                     <Upload className="w-4 h-4" />
                     Import Backup
@@ -108,7 +103,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExportBackup, 
                 </div>
               </div>
 
-               <div className="flex items-start gap-3 p-4 bg-rose-500/5 rounded-lg border border-rose-500/10">
+              <div className="flex items-start gap-3 p-4 bg-rose-500/5 rounded-lg border border-rose-500/10">
                 <div className="p-2 bg-rose-500/10 rounded text-rose-400">
                   <AlertCircle className="w-4 h-4" />
                 </div>
@@ -116,8 +111,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExportBackup, 
                   <h4 className="text-sm font-bold text-white mb-1">Factory Reset</h4>
                   <p className="text-xs text-[#8E9299] mb-3 leading-relaxed">Wipe all data and return the system to its original state. <span className="text-rose-500 font-bold underline">THIS CANNOT BE UNDONE.</span></p>
                   <button 
-                    onClick={handleRestoreClick}
-                    className="flex items-center gap-2 px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-sm font-bold transition-all shadow-lg shadow-rose-500/20"
+                    onClick={() => {
+                      setRestoreSuccess(false);
+                      setRestoreError('');
+                      setShowRestoreModal(true);
+                    }}
+                    className="flex items-center gap-2 px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-sm font-bold transition-all shadow-lg shadow-rose-500/20 cursor-pointer"
                   >
                     <AlertCircle className="w-4 h-4" />
                     Restore Factory Settings
@@ -157,29 +156,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExportBackup, 
                 </div>
                 <span className="text-xs font-bold text-indigo-400 bg-indigo-400/10 px-2 py-1 rounded">50 New Logs</span>
               </div>
-
-              {dbInfo && (
-                <div className="space-y-2 p-3 bg-[#0A0B0E] rounded-lg border border-[#1E222A]">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <HardDrive className="w-4 h-4 text-cyan-400" />
-                      <span className="text-sm text-[#E0E2E5]">Database Engine</span>
-                    </div>
-                    <span className="text-xs font-bold text-cyan-400 bg-cyan-400/10 px-2 py-1 rounded">{dbInfo.backend}</span>
-                  </div>
-                  {dbInfo.dbPath && (
-                    <div className="text-xs text-[#8E9299] break-all pt-1 border-t border-[#1E222A]">
-                      <span className="text-[#E0E2E5] font-semibold">Location:</span> {dbInfo.dbPath}
-                    </div>
-                  )}
-                  {dbInfo.isInsideAppFolder && (
-                    <div className="flex items-center gap-1.5 text-xs text-emerald-400 font-medium pt-1">
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      Portable Mode Active (DB stored inside application folder)
-                    </div>
-                  )}
-                </div>
-              )}
               
               <div className="p-4 bg-[#0A0B0E] rounded-lg border border-[#1E222A] mt-2">
                 <p className="text-xs text-[#8E9299] leading-relaxed">
@@ -192,13 +168,79 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExportBackup, 
         </motion.div>
       </div>
 
-      <FactoryResetModal
-        isOpen={showFactoryModal}
-        onClose={() => setShowFactoryModal(false)}
-        onConfirm={handleConfirmReset}
-        onExport={onExportBackup}
-        stats={stats}
-      />
+      {/* RESTORE FACTORY CONFIRMATION MODAL */}
+      {showRestoreModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fadeIn">
+          <div className="bg-[#0F1117] border border-[#1E222A] rounded-2xl p-6 w-full max-w-md space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-[#1E222A] pb-3">
+              <div className="flex items-center gap-2 text-rose-500">
+                <AlertCircle className="w-5 h-5" />
+                <h3 className="text-base font-bold text-white">Restore Factory Settings</h3>
+              </div>
+              {!isRestoring && (
+                <button
+                  type="button"
+                  onClick={() => setShowRestoreModal(false)}
+                  className="text-[#8E9299] hover:text-white"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              )}
+            </div>
+
+            {restoreSuccess ? (
+              <div className="py-6 text-center space-y-3">
+                <CheckCircle2 className="w-12 h-12 text-emerald-400 mx-auto animate-bounce" />
+                <h4 className="text-lg font-bold text-white">Factory Reset Complete</h4>
+                <p className="text-xs text-[#8E9299]">System has been restored to default factory settings.</p>
+              </div>
+            ) : (
+              <>
+                <div className="space-y-3">
+                  <p className="text-sm text-gray-300 leading-relaxed">
+                    Are you sure you want to restore factory settings?
+                  </p>
+                  <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-lg text-xs text-rose-300 leading-relaxed">
+                    <strong>WARNING:</strong> This action will permanently erase all Sets, Positions, Plate Registrations, Production Logs, Audit Logs, and customized Personnel, restoring initial defaults.
+                  </div>
+                </div>
+
+                {restoreError && (
+                  <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-lg text-xs text-rose-400">
+                    {restoreError}
+                  </div>
+                )}
+
+                <div className="flex items-center justify-end gap-3 pt-2 border-t border-[#1E222A]">
+                  <button
+                    type="button"
+                    disabled={isRestoring}
+                    onClick={() => setShowRestoreModal(false)}
+                    className="px-4 py-2 bg-[#191D28] hover:bg-[#252A38] border border-[#1E222A] text-gray-300 rounded-lg text-xs font-semibold disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isRestoring}
+                    onClick={handleConfirmRestore}
+                    className="flex items-center gap-2 px-5 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-xs font-bold shadow-md cursor-pointer disabled:opacity-50"
+                  >
+                    {isRestoring ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        Restoring...
+                      </>
+                    ) : (
+                      'Yes, Restore Factory Settings'
+                    )}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

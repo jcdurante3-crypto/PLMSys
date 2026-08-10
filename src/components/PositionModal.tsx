@@ -52,7 +52,10 @@ export const PositionModal: React.FC<PositionModalProps> = ({
   // Install Form State
   const todayStr = new Date().toISOString().split('T')[0];
   const [mfgDate, setMfgDate] = useState(todayStr);
-  const [operatorId, setOperatorId] = useState('OP-1042');
+  const [operatorId, setOperatorId] = useState(() => {
+    if (personnel && personnel.length > 0) return personnel[0].shortName;
+    return 'Admin';
+  });
   const [remarks, setRemarks] = useState('');
   const [initialCycles, setInitialCycles] = useState<number>(0);
 
@@ -82,6 +85,24 @@ export const PositionModal: React.FC<PositionModalProps> = ({
     } else {
       setRejectTypes([...rejectTypes, type]);
     }
+  };
+
+  const renderPersonnelDatalist = (personnelList: Personnel[]) => {
+    const seen = new Set<string>();
+    const options: { value: string; label: string }[] = [];
+
+    personnelList.forEach(p => {
+      const name = p.shortName || p.fullName;
+      const norm = name.toUpperCase();
+      if (!seen.has(norm)) {
+        seen.add(norm);
+        options.push({ value: name, label: `${p.fullName} (${p.position})` });
+      }
+    });
+
+    return options.map(opt => (
+      <option key={opt.value} value={opt.value}>{opt.label}</option>
+    ));
   };
 
   const handleInstallSubmit = (e: React.FormEvent) => {
@@ -245,9 +266,7 @@ export const PositionModal: React.FC<PositionModalProps> = ({
                     className="w-full px-3 py-2 bg-[#191D28] border border-[#1E222A] rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-[#F27D26]"
                   />
                   <datalist id="operator-list">
-                    {personnel.map(p => (
-                      <option key={p.id} value={p.shortName} />
-                    ))}
+                    {renderPersonnelDatalist(personnel)}
                   </datalist>
                 </div>
               </div>
@@ -328,9 +347,7 @@ export const PositionModal: React.FC<PositionModalProps> = ({
                       className="w-full px-3 py-2 bg-[#191D28] border border-[#1E222A] rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-[#F27D26]"
                     />
                     <datalist id="operator-list-replace">
-                      {personnel.map(p => (
-                        <option key={p.id} value={p.shortName} />
-                      ))}
+                      {renderPersonnelDatalist(personnel)}
                     </datalist>
                   </div>
                 </div>

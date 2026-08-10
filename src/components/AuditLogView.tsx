@@ -147,14 +147,14 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ auditLogs, sets, pos
           {/* Filter Set */}
           <div>
             <label className="block text-[10px] font-bold text-[#8E9299] uppercase tracking-wider mb-1.5 flex items-center gap-1">
-              <Layers className="w-3.5 h-3.5 text-[#F27D26]" /> Filter by Master Set
+              <Layers className="w-3.5 h-3.5 text-[#F27D26]" /> Filter by Set
             </label>
             <select
               value={selectedSetId}
               onChange={(e) => setSelectedSetId(e.target.value)}
               className="w-full px-3 py-2 bg-[#191D28] border border-[#1E222A] rounded-xl text-sm text-white focus:outline-none focus:ring-2 focus:ring-[#F27D26]/50"
             >
-              <option value="ALL">All Master Sets (All)</option>
+              <option value="ALL">All Sets (All)</option>
               {sortedSets.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.displayName} ({s.shortCode})

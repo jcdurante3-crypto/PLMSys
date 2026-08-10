@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
-import { X, Layers, Plus } from 'lucide-react';
+import { X, Layers, Plus, AlertCircle } from 'lucide-react';
 import { SetRecord, Personnel } from '../types';
 
 interface CreateSetModalProps {
   sets: SetRecord[];
   onClose: () => void;
-  onCreateSet: (setNumber: number, displayName: string, shortCode: string, initialCycle: number, numPlates: number) => Promise<void>;
+  onCreateSet: (setNumber: number, displayName: string, shortCode: string, initialCycle: number, numPlates: number, creationDate?: string) => Promise<void>;
 }
 
 export const CreateSetModal: React.FC<CreateSetModalProps> = ({
@@ -14,21 +14,26 @@ export const CreateSetModal: React.FC<CreateSetModalProps> = ({
   onCreateSet,
 }) => {
   const nextNum = sets.length > 0 ? Math.max(...sets.map(s => s.setNumber)) + 1 : 1;
+  const todayStr = new Date().toISOString().split('T')[0];
   const [setNumber, setSetNumber] = useState(nextNum);
   const [displayName, setDisplayName] = useState(`SET ${nextNum < 10 ? '0' + nextNum : nextNum}`);
   const [shortCode, setShortCode] = useState(`S${nextNum < 10 ? '0' + nextNum : nextNum}`);
+  const [creationDate, setCreationDate] = useState(todayStr);
   const [initialCycle, setInitialCycle] = useState(0);
   const [numPlates, setNumPlates] = useState<number>(11);
   const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setErrorMsg(null);
     setLoading(true);
     try {
-      await onCreateSet(setNumber, displayName, shortCode, initialCycle, numPlates);
+      await onCreateSet(setNumber, displayName, shortCode, initialCycle, numPlates, creationDate);
       onClose();
     } catch (err) {
       console.error(err);
+      setErrorMsg(err instanceof Error ? err.message : 'Failed to create set.');
     } finally {
       setLoading(false);
     }
@@ -44,8 +49,8 @@ export const CreateSetModal: React.FC<CreateSetModalProps> = ({
               <Layers className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-bold text-base text-white">Create New Master Set</h3>
-              <p className="text-xs text-[#8E9299]">Sets up 11 fixed positions & initial plates</p>
+              <h3 className="font-bold text-base text-white">Create New Set</h3>
+              <p className="text-xs text-[#8E9299]">Sets up {numPlates} fixed positions & initial plates</p>
             </div>
           </div>
           <button onClick={onClose} className="p-1.5 text-[#8E9299] hover:text-white hover:bg-[#2D333E] rounded-lg">
@@ -55,6 +60,13 @@ export const CreateSetModal: React.FC<CreateSetModalProps> = ({
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          {errorMsg && (
+            <div className="bg-rose-500/10 border border-rose-500/20 p-3 rounded-xl flex items-center gap-2.5 text-rose-400 text-xs font-semibold animate-fadeIn">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{errorMsg}</span>
+            </div>
+          )}
+
           <div>
             <label className="block text-xs font-semibold text-[#8E9299] uppercase mb-1">Set Number</label>
             <input
@@ -93,6 +105,20 @@ export const CreateSetModal: React.FC<CreateSetModalProps> = ({
               onChange={(e) => setShortCode(e.target.value)}
               className="w-full px-3 py-2 bg-[#191D28] border border-[#1E222A] rounded-lg text-sm font-mono text-white focus:outline-none focus:ring-2 focus:ring-[#F27D26]"
             />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-[#8E9299] uppercase mb-1">Creation Date</label>
+            <input
+              type="date"
+              required
+              value={creationDate}
+              onChange={(e) => setCreationDate(e.target.value)}
+              className="w-full px-3 py-2 bg-[#191D28] border border-[#1E222A] rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-[#F27D26]"
+            />
+            <span className="text-xs text-[#8E9299] mt-1 block">
+              Defaults to current date. Change if registering a set created on a different date.
+            </span>
           </div>
 
           <div>

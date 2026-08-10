@@ -21,6 +21,11 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenLogin,
   onOpenTutorial,
 }) => {
+  const isRedundantRole =
+    (currentUser.name.toLowerCase() === 'operator' && currentUser.role === 'OPERATOR') ||
+    (currentUser.name.toLowerCase().includes('admin') && currentUser.role === 'ADMIN') ||
+    currentUser.name.toUpperCase() === currentUser.role.toUpperCase();
+
   return (
     <header className="bg-[#0F1117] text-[#E0E2E5] shadow-lg border-b border-[#1E222A] sticky top-0 z-40">
       <div className="w-full px-4 sm:px-6 lg:px-8">
@@ -111,18 +116,19 @@ export const Navbar: React.FC<NavbarProps> = ({
           <div className="flex items-center space-x-2">
             <div className="flex items-center gap-2 text-xs text-[#8E9299] px-3">
               <span className="font-semibold text-white">{currentUser.name}</span>
-              <span className="bg-[#191D28] px-2 py-0.5 rounded text-[10px] uppercase">{currentUser.role}</span>
+              {!isRedundantRole && (
+                <span className="bg-[#191D28] px-2 py-0.5 rounded text-[10px] uppercase font-semibold border border-[#1E222A]">{currentUser.role}</span>
+              )}
             </div>
             
             <button
               onClick={onOpenTutorial}
-              title="Help & Tutorial"
-              className="p-2 text-[#8E9299] hover:text-white hover:bg-[#191D28] rounded-lg transition-colors border border-[#1E222A] flex items-center gap-1 text-xs px-3"
+              title="Help / Tutorial"
+              className="p-2 text-[#8E9299] hover:text-white hover:bg-[#191D28] rounded-lg transition-colors border border-[#1E222A] flex items-center justify-center"
             >
               <HelpCircle className="w-4 h-4 text-[#F27D26]" />
-              <span className="hidden sm:inline">Tutorial</span>
             </button>
-            
+
             <button
               onClick={onOpenLogin}
               title="Login"

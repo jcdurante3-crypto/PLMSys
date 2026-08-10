@@ -29,8 +29,9 @@ import { LoginModal } from './components/LoginModal';
 import { RegistryModal } from './components/RegistryModal';
 import { AdminLoginModal } from './components/AdminLoginModal';
 import { AdminDashboard } from './components/AdminDashboard';
-import { TutorialOverlay } from './components/TutorialOverlay';
+import { TutorialModal } from './components/TutorialModal';
 import { useAutoBackup } from './hooks/useAutoBackup';
+import { Shield } from 'lucide-react';
 
 export default function App() {
   const [loading, setLoading] = useState(true);
@@ -51,14 +52,7 @@ export default function App() {
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [showAdminLoginModal, setShowAdminLoginModal] = useState(false);
   const [showRegistryModal, setShowRegistryModal] = useState(false);
-  const [showTutorial, setShowTutorial] = useState(() => {
-    return !localStorage.getItem('plm_tutorial_shown');
-  });
-
-  const handleCloseTutorial = () => {
-    localStorage.setItem('plm_tutorial_shown', 'true');
-    setShowTutorial(false);
-  };
+  const [showTutorialModal, setShowTutorialModal] = useState(false);
 
   const [showScannerModal, setShowScannerModal] = useState(false);
   const [showCreateSetModal, setShowCreateSetModal] = useState(false);
@@ -79,7 +73,7 @@ export default function App() {
 
   const loadData = async () => {
     try {
-      await seedDatabase(0, false);
+      await seedDatabase(2, false);
       const [
         sData,
         pData,
@@ -444,16 +438,28 @@ export default function App() {
     displayName: string,
     shortCode: string,
     initialCycle: number,
-    numPlates: number = 11
+    numPlates: number = 11,
+    creationDate?: string
   ) => {
-    if (sets.some(s => s.setNumber === setNumber || s.shortCode.toLowerCase() === shortCode.toLowerCase())) {
-      alert(`Set number ${setNumber} or short code ${shortCode} already exists!`);
-      return;
+    const existingSetNum = sets.find(s => s.setNumber === setNumber);
+    if (existingSetNum) {
+      throw new Error(`Set Number ${setNumber} already exists (${existingSetNum.displayName}). Please use a unique Set Number.`);
+    }
+
+    const existingCode = sets.find(s => s.shortCode.trim().toLowerCase() === shortCode.trim().toLowerCase());
+    if (existingCode) {
+      throw new Error(`Short Code "${shortCode}" is already assigned to ${existingCode.displayName}. Please use a unique Short Code.`);
     }
 
     const setId = generateUUID();
-    const todayStr = new Date().toISOString().split('T')[0];
-    const dateFormatted = '080826';
+    const setDateStr = creationDate || new Date().toISOString().split('T')[0];
+    const dateParts = setDateStr.split('-');
+    const dateObj = new Date(setDateStr + 'T00:00:00');
+    const mm = String(dateParts[1] || dateObj.getMonth() + 1).padStart(2, '0');
+    const dd = String(dateParts[2] || dateObj.getDate()).padStart(2, '0');
+    const yy = String(dateParts[0] || dateObj.getFullYear()).slice(-2);
+    const dateFormatted = `${mm}${dd}${yy}`;
+    const setCreatedAt = new Date(setDateStr + 'T00:00:00').toISOString();
 
     const newSet: SetRecord = {
       id: setId,
@@ -464,8 +470,8 @@ export default function App() {
       currentTotalCycle: initialCycle,
       initialCycle,
       todayProduction: 0,
-      lastProductionDate: todayStr,
-      createdAt: new Date().toISOString(),
+      lastProductionDate: setDateStr,
+      createdAt: setCreatedAt,
       updatedAt: new Date().toISOString()
     };
 
@@ -486,11 +492,11 @@ export default function App() {
       platesToCreate.push({
         id: plateId,
         plateSerialNumber: serialNumber,
-        manufacturingDate: todayStr,
+        manufacturingDate: setDateStr,
         status: 'ACTIVE',
         currentSetId: setId,
         currentPositionId: posId,
-        createdAt: new Date().toISOString(),
+        createdAt: setCreatedAt,
         updatedAt: new Date().toISOString()
       });
 
@@ -503,7 +509,7 @@ export default function App() {
         fullCode,
         status: 'OCCUPIED',
         currentPlateId: plateId,
-        createdAt: new Date().toISOString(),
+        createdAt: setCreatedAt,
         updatedAt: new Date().toISOString()
       });
 
@@ -512,11 +518,11 @@ export default function App() {
         plateId,
         setId,
         positionId: posId,
-        installationDate: todayStr,
+        installationDate: setDateStr,
         installationCycle: initialCycle,
         operatorId: currentUser.name,
         remarks: 'Initial installation on set creation',
-        createdAt: new Date().toISOString()
+        createdAt: setCreatedAt
       });
     }
 
@@ -897,12 +903,13 @@ export default function App() {
   const handleRestoreFactory = async () => {
     setLoading(true);
     try {
+      setSelectedSetId(null);
+      setSelectedPosModal(null);
       await seedDatabase(0, true);
       await loadData();
-      alert('System has been restored to factory settings.');
     } catch (err) {
       console.error('Failed to restore factory settings:', err);
-      alert('Failed to restore factory settings. Please check console for details.');
+      alert('Failed to restore factory settings: ' + (err instanceof Error ? err.message : String(err)));
     } finally {
       setLoading(false);
     }
@@ -958,9 +965,8 @@ export default function App() {
         totalPositions={totalPositionsCount}
         activeSetsCount={sets.length}
         currentUser={currentUser}
-        onOpenRegistry={() => setShowRegistryModal(true)}
         onOpenLogin={() => setShowLoginModal(true)}
-        onOpenTutorial={() => setShowTutorial(true)}
+        onOpenTutorial={() => setShowTutorialModal(true)}
       />
 
       <main className="flex-1 w-full max-w-full px-4 sm:px-6 lg:px-8 py-6">
@@ -1016,6 +1022,7 @@ export default function App() {
                 dailyProductions={dailyProductions}
                 sets={sets}
                 jobOrders={jobOrders}
+                onOpenLogProduction={() => setShowLogProductionModal(true)}
               />
             )}
             {activeTab === 'search' && (
@@ -1037,12 +1044,28 @@ export default function App() {
             {activeTab === 'audit' && (
               <AuditLogView auditLogs={auditLogs} sets={sets} positions={positions} plates={plates} />
             )}
-            {activeTab === 'admin' && currentUser.role === 'ADMIN' && (
-              <AdminDashboard 
-                onExportBackup={handleExportBackup} 
-                onImportBackup={handleImportBackup} 
-                onRestoreFactory={handleRestoreFactory}
-              />
+            {activeTab === 'admin' && (
+              currentUser.role === 'ADMIN' ? (
+                <AdminDashboard 
+                  onExportBackup={handleExportBackup} 
+                  onImportBackup={handleImportBackup} 
+                  onRestoreFactory={handleRestoreFactory}
+                />
+              ) : (
+                <div className="bg-[#12151C] border border-[#1E222A] rounded-xl p-8 text-center max-w-lg mx-auto mt-12 space-y-4">
+                  <Shield className="w-12 h-12 text-[#F27D26] mx-auto" />
+                  <h3 className="text-lg font-bold text-white">Administrator Access Required</h3>
+                  <p className="text-sm text-[#8E9299]">
+                    The Admin Dashboard and system maintenance tools are restricted to authorized administrators. Log in as Administrator to access backups, system settings, and factory reset controls.
+                  </p>
+                  <button
+                    onClick={() => setShowAdminLoginModal(true)}
+                    className="px-4 py-2 bg-[#F27D26] hover:bg-[#d96a1f] text-white text-xs font-bold rounded-lg transition-colors"
+                  >
+                    Login as Administrator
+                  </button>
+                </div>
+              )
             )}
           </>
         )}
@@ -1108,9 +1131,17 @@ export default function App() {
         />
       )}
 
-      <TutorialOverlay
-        isOpen={showTutorial}
-        onClose={handleCloseTutorial}
+      <TutorialModal
+        isOpen={showTutorialModal}
+        onClose={() => {
+          setShowTutorialModal(false);
+          setActiveTab('dashboard');
+          setSelectedSetId(null);
+        }}
+        setActiveTab={(tab) => {
+          setActiveTab(tab);
+          setSelectedSetId(null);
+        }}
       />
     </div>
   );

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { SetRecord, PositionRecord, PlateRecord, PlateInstallationRecord, PlateRemovalRecord, User, Personnel } from '../types';
-import { Layers, Activity, Search, Plus, ArrowRight, Sliders, Edit2, Check, X, AlertCircle, CheckCircle2, Calendar } from 'lucide-react';
+import { Layers, Activity, Search, Plus, ArrowRight, Sliders, Edit2, Check, X, AlertCircle, CheckCircle2, Calendar, Archive, Clock, TrendingUp, BarChart2 } from 'lucide-react';
 
 interface DashboardProps {
   sets: SetRecord[];
@@ -39,26 +39,38 @@ export const Dashboard: React.FC<DashboardProps> = ({
 }) => {
   const activePlatesCount = plates.filter(p => p.status === 'ACTIVE').length;
   const rejectedPlatesCount = plates.filter(p => p.status === 'REJECTED').length;
+  const retiredPlatesCount = plates.filter(p => p.status === 'RETIRED').length;
   const totalProductionToday = sets.reduce((sum, s) => sum + s.todayProduction, 0);
 
-  // Calculate average lifespan based on rejected plates (removals with status === 'REJECTED')
+  // 1. Average Lifespan of Rejected Plates
   const rejectedRemovals = removals.filter(r => r.status === 'REJECTED');
-  let totalLifespan = 0;
-  let rejectedCount = 0;
-
+  let rejectedTotalLifespan = 0;
   rejectedRemovals.forEach(rem => {
     const inst = installations.find(i => i.plateId === rem.plateId && i.setId === rem.setId && i.positionId === rem.positionId);
     const lifespan = rem.totalCyclesAchieved + (inst?.initialCycles || 0);
-    totalLifespan += lifespan;
-    rejectedCount++;
+    rejectedTotalLifespan += lifespan;
   });
+  const avgRejectedLifespan = rejectedRemovals.length > 0 ? Math.round(rejectedTotalLifespan / rejectedRemovals.length) : 0;
 
-  const avgLifespan = rejectedCount > 0 ? Math.round(totalLifespan / rejectedCount) : 0;
+  // 2. Average Lifespan of Retired Plates
+  const retiredRemovals = removals.filter(r => r.status === 'RETIRED');
+  let retiredTotalLifespan = 0;
+  retiredRemovals.forEach(rem => {
+    const inst = installations.find(i => i.plateId === rem.plateId && i.setId === rem.setId && i.positionId === rem.positionId);
+    const lifespan = rem.totalCyclesAchieved + (inst?.initialCycles || 0);
+    retiredTotalLifespan += lifespan;
+  });
+  const avgRetiredLifespan = retiredRemovals.length > 0 ? Math.round(retiredTotalLifespan / retiredRemovals.length) : 0;
 
-  const activeSetsCount = sets.filter(s => s.status === 'ACTIVE').length;
-  const maintenanceSetsCount = sets.filter(s => s.status === 'MAINTENANCE').length;
-  const totalPositionsCount = positions.length;
-  const occupiedPositionsCount = positions.filter(p => p.status === 'OCCUPIED').length;
+  // 3. Average Total Lifespan (Retired + Rejected)
+  const combinedRemovals = removals.filter(r => r.status === 'RETIRED' || r.status === 'REJECTED');
+  let combinedTotalLifespan = 0;
+  combinedRemovals.forEach(rem => {
+    const inst = installations.find(i => i.plateId === rem.plateId && i.setId === rem.setId && i.positionId === rem.positionId);
+    const lifespan = rem.totalCyclesAchieved + (inst?.initialCycles || 0);
+    combinedTotalLifespan += lifespan;
+  });
+  const avgTotalLifespan = combinedRemovals.length > 0 ? Math.round(combinedTotalLifespan / combinedRemovals.length) : 0;
 
   return (
     <div className="space-y-6">
@@ -97,32 +109,109 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </div>
         </div>
 
-        {/* Metrics Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-8">
-          <div className="bg-[#191D28] rounded-xl p-4 border border-[#1E222A] shadow">
-            <div className="text-[#8E9299] text-xs font-medium uppercase tracking-wider">Active Plates</div>
-            <div className="text-2xl sm:text-3xl font-bold text-emerald-400 mt-1">{activePlatesCount.toLocaleString()}</div>
-            <div className="text-xs text-[#8E9299] mt-1">Currently installed & running</div>
+        {/* Metrics Section: Operational Counts */}
+        <div className="mt-8">
+          <div className="text-xs font-bold text-[#8E9299] uppercase tracking-wider mb-3 flex items-center gap-2">
+            <BarChart2 className="w-4 h-4 text-[#F27D26]" /> Operational Plate Metrics
           </div>
-          <div className="bg-[#191D28] rounded-xl p-4 border border-[#1E222A] shadow">
-            <div className="text-[#8E9299] text-xs font-medium uppercase tracking-wider">Today's Production</div>
-            <div className="text-2xl sm:text-3xl font-bold text-sky-400 mt-1">+{totalProductionToday.toLocaleString()}</div>
-            <div className="text-xs text-[#8E9299] mt-1">Cycles added across all Sets</div>
-          </div>
-          <div className="bg-[#191D28] rounded-xl p-4 border border-[#1E222A] shadow">
-            <div className="text-[#8E9299] text-xs font-medium uppercase tracking-wider">Rejected Plates</div>
-            <div className="text-2xl sm:text-3xl font-bold text-rose-400 mt-1">{rejectedPlatesCount.toLocaleString()}</div>
-            <div className="text-xs text-[#8E9299] mt-1">Logged with reject reason</div>
-          </div>
-          <div className="bg-[#191D28] rounded-xl p-4 border border-[#1E222A] shadow">
-            <div className="text-[#8E9299] text-xs font-medium uppercase tracking-wider">Average Plate Lifespan</div>
-            <div className="text-2xl sm:text-3xl font-bold text-amber-500 mt-1">
-              {avgLifespan > 0 ? `${avgLifespan.toLocaleString()} cycles` : '—'}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-[#191D28] rounded-xl p-4 border border-[#1E222A] shadow flex justify-between items-start">
+              <div>
+                <div className="text-[#8E9299] text-xs font-semibold uppercase tracking-wider">Active Plates</div>
+                <div className="text-2xl sm:text-3xl font-extrabold text-emerald-400 mt-1">{activePlatesCount.toLocaleString()}</div>
+                <div className="text-xs text-[#8E9299] mt-1">Currently installed & running</div>
+              </div>
+              <div className="p-2 bg-emerald-500/10 rounded-lg text-emerald-400">
+                <CheckCircle2 className="w-5 h-5" />
+              </div>
             </div>
-            <div className="text-xs text-[#8E9299] mt-1">Average life of rejected plates</div>
+
+            <div className="bg-[#191D28] rounded-xl p-4 border border-[#1E222A] shadow flex justify-between items-start">
+              <div>
+                <div className="text-[#8E9299] text-xs font-semibold uppercase tracking-wider">Today's Production</div>
+                <div className="text-2xl sm:text-3xl font-extrabold text-sky-400 mt-1">+{totalProductionToday.toLocaleString()}</div>
+                <div className="text-xs text-[#8E9299] mt-1">Cycles added across all Sets</div>
+              </div>
+              <div className="p-2 bg-sky-500/10 rounded-lg text-sky-400">
+                <Activity className="w-5 h-5" />
+              </div>
+            </div>
+
+            <div className="bg-[#191D28] rounded-xl p-4 border border-[#1E222A] shadow flex justify-between items-start">
+              <div>
+                <div className="text-[#8E9299] text-xs font-semibold uppercase tracking-wider">Rejected Plates</div>
+                <div className="text-2xl sm:text-3xl font-extrabold text-rose-400 mt-1">{rejectedPlatesCount.toLocaleString()}</div>
+                <div className="text-xs text-[#8E9299] mt-1">Logged with reject / defect reason</div>
+              </div>
+              <div className="p-2 bg-rose-500/10 rounded-lg text-rose-400">
+                <AlertCircle className="w-5 h-5" />
+              </div>
+            </div>
+
+            <div className="bg-[#191D28] rounded-xl p-4 border border-[#1E222A] shadow flex justify-between items-start">
+              <div>
+                <div className="text-[#8E9299] text-xs font-semibold uppercase tracking-wider">Retired Plates</div>
+                <div className="text-2xl sm:text-3xl font-extrabold text-purple-400 mt-1">{retiredPlatesCount.toLocaleString()}</div>
+                <div className="text-xs text-[#8E9299] mt-1">Scheduled end-of-life retirement</div>
+              </div>
+              <div className="p-2 bg-purple-500/10 rounded-lg text-purple-400">
+                <Archive className="w-5 h-5" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Metrics Section: Lifespan & Performance Analytics */}
+        <div className="mt-6">
+          <div className="text-xs font-bold text-[#8E9299] uppercase tracking-wider mb-3 flex items-center gap-2">
+            <Clock className="w-4 h-4 text-[#F27D26]" /> Lifespan Performance Analytics
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="bg-[#191D28] rounded-xl p-4 border border-[#1E222A] shadow flex justify-between items-start">
+              <div>
+                <div className="text-[#8E9299] text-xs font-semibold uppercase tracking-wider">Avg Lifespan (Rejected)</div>
+                <div className="text-2xl sm:text-3xl font-extrabold text-amber-400 mt-1">
+                  {avgRejectedLifespan > 0 ? `${avgRejectedLifespan.toLocaleString()}` : '—'}
+                  {avgRejectedLifespan > 0 && <span className="text-xs text-[#8E9299] font-normal ml-1">cycles</span>}
+                </div>
+                <div className="text-xs text-[#8E9299] mt-1">Average cycles reached before rejection</div>
+              </div>
+              <div className="p-2 bg-amber-500/10 rounded-lg text-amber-400">
+                <AlertCircle className="w-5 h-5" />
+              </div>
+            </div>
+
+            <div className="bg-[#191D28] rounded-xl p-4 border border-[#1E222A] shadow flex justify-between items-start">
+              <div>
+                <div className="text-[#8E9299] text-xs font-semibold uppercase tracking-wider">Avg Lifespan (Retired)</div>
+                <div className="text-2xl sm:text-3xl font-extrabold text-purple-400 mt-1">
+                  {avgRetiredLifespan > 0 ? `${avgRetiredLifespan.toLocaleString()}` : '—'}
+                  {avgRetiredLifespan > 0 && <span className="text-xs text-[#8E9299] font-normal ml-1">cycles</span>}
+                </div>
+                <div className="text-xs text-[#8E9299] mt-1">Average cycles reached upon planned retirement</div>
+              </div>
+              <div className="p-2 bg-purple-500/10 rounded-lg text-purple-400">
+                <Archive className="w-5 h-5" />
+              </div>
+            </div>
+
+            <div className="bg-[#191D28] rounded-xl p-4 border border-[#1E222A] shadow flex justify-between items-start">
+              <div>
+                <div className="text-[#8E9299] text-xs font-semibold uppercase tracking-wider">Ave Total Lifespan (Retired + Rejected)</div>
+                <div className="text-2xl sm:text-3xl font-extrabold text-teal-400 mt-1">
+                  {avgTotalLifespan > 0 ? `${avgTotalLifespan.toLocaleString()}` : '—'}
+                  {avgTotalLifespan > 0 && <span className="text-xs text-[#8E9299] font-normal ml-1">cycles</span>}
+                </div>
+                <div className="text-xs text-[#8E9299] mt-1">Combined fleet average terminal lifespan</div>
+              </div>
+              <div className="p-2 bg-teal-500/10 rounded-lg text-teal-400">
+                <TrendingUp className="w-5 h-5" />
+              </div>
+            </div>
           </div>
         </div>
       </div>
     </div>
   );
 };
+

@@ -12,47 +12,7 @@ import {
   Personnel
 } from '../types';
 
-export function isElectronEnv(): boolean {
-  return typeof window !== 'undefined' && 'electronAPI' in window;
-}
-
-export interface ITable<T extends { id: string }, Key = string> {
-  toArray(): Promise<T[]>;
-  put(item: T): Promise<Key>;
-  bulkPut(items: T[]): Promise<Key[]>;
-  update(key: Key, changes: Partial<T>): Promise<number>;
-  delete(key: Key): Promise<void>;
-  clear(): Promise<void>;
-  count(): Promise<number>;
-}
-
-class DexieTableWrapper<T extends { id: string }> implements ITable<T, string> {
-  constructor(private dexieTable: Table<T, string>) {}
-
-  async toArray(): Promise<T[]> {
-    return this.dexieTable.toArray();
-  }
-  async put(item: T): Promise<string> {
-    return this.dexieTable.put(item);
-  }
-  async bulkPut(items: T[]): Promise<string[]> {
-    return this.dexieTable.bulkPut(items) as unknown as Promise<string[]>;
-  }
-  async update(key: string, changes: Partial<T>): Promise<number> {
-    return this.dexieTable.update(key, changes as any);
-  }
-  async delete(key: string): Promise<void> {
-    return this.dexieTable.delete(key);
-  }
-  async clear(): Promise<void> {
-    return this.dexieTable.clear();
-  }
-  async count(): Promise<number> {
-    return this.dexieTable.count();
-  }
-}
-
-export class PlateDatabaseDexie extends Dexie {
+export class PlateDatabase extends Dexie {
   sets!: Table<SetRecord, string>;
   positions!: Table<PositionRecord, string>;
   plates!: Table<PlateRecord, string>;
@@ -81,53 +41,7 @@ export class PlateDatabaseDexie extends Dexie {
   }
 }
 
-export class AppDatabaseWrapper {
-  sets: ITable<SetRecord, string>;
-  positions: ITable<PositionRecord, string>;
-  plates: ITable<PlateRecord, string>;
-  plateInstallations: ITable<PlateInstallationRecord, string>;
-  plateRemovals: ITable<PlateRemovalRecord, string>;
-  dailyProduction: ITable<DailyProductionRecord, string>;
-  replacements: ITable<ReplacementRecord, string>;
-  jobOrders: ITable<JobOrderRecord, string>;
-  auditLogs: ITable<AuditRecord, string>;
-  personnel: ITable<Personnel, string>;
-
-  private dexieDb?: PlateDatabaseDexie;
-
-  constructor() {
-    this.dexieDb = new PlateDatabaseDexie();
-    this.sets = new DexieTableWrapper<SetRecord>(this.dexieDb.sets);
-    this.positions = new DexieTableWrapper<PositionRecord>(this.dexieDb.positions);
-    this.plates = new DexieTableWrapper<PlateRecord>(this.dexieDb.plates);
-    this.plateInstallations = new DexieTableWrapper<PlateInstallationRecord>(this.dexieDb.plateInstallations);
-    this.plateRemovals = new DexieTableWrapper<PlateRemovalRecord>(this.dexieDb.plateRemovals);
-    this.dailyProduction = new DexieTableWrapper<DailyProductionRecord>(this.dexieDb.dailyProduction);
-    this.replacements = new DexieTableWrapper<ReplacementRecord>(this.dexieDb.replacements);
-    this.jobOrders = new DexieTableWrapper<JobOrderRecord>(this.dexieDb.jobOrders);
-    this.auditLogs = new DexieTableWrapper<AuditRecord>(this.dexieDb.auditLogs);
-    this.personnel = new DexieTableWrapper<Personnel>(this.dexieDb.personnel);
-  }
-
-  async getDbInfo(): Promise<{ dbPath: string; appDir: string; isInsideAppFolder: boolean; backend: string }> {
-    if (isElectronEnv()) {
-      return {
-        dbPath: 'IndexedDB (Electron Profile)',
-        appDir: 'Electron Application Container',
-        isInsideAppFolder: true,
-        backend: 'Dexie.js / IndexedDB (Electron Desktop)'
-      };
-    }
-    return {
-      dbPath: 'IndexedDB (Browser)',
-      appDir: 'N/A (Browser)',
-      isInsideAppFolder: false,
-      backend: 'Dexie.js / IndexedDB'
-    };
-  }
-}
-
-export const db = new AppDatabaseWrapper();
+export const db = new PlateDatabase();
 
 // Helper to generate UUID v4
 export function generateUUID(): string {
@@ -141,36 +55,49 @@ export function generateUUID(): string {
 // Seed initial database if empty or force reset
 let isSeeding = false;
 export async function seedDatabase(setCount: number = 2, force: boolean = false) {
-  if (isSeeding) return;
+  if (isSeeding && !force) return;
   isSeeding = true;
   
   try {
     const existingSetsCount = await db.sets.count();
+    const existingPersonnelCount = await db.personnel.count();
     
-    // If not forcing, check if we already have sets. If setCount is 0 and we have 0 sets, we're done.
-    if (!force && existingSetsCount === setCount) {
+    // If not forcing, check if database is already initialized. If so, return immediately.
+    if (!force && (existingSetsCount > 0 || existingPersonnelCount > 0)) {
       isSeeding = false;
       return;
     }
 
-    // Always clear all tables first to ensure a clean state if data is incorrect or forced
-    await Promise.all([
-      db.sets.clear(),
-      db.positions.clear(),
-      db.plates.clear(),
-      db.plateInstallations.clear(),
-      db.plateRemovals.clear(),
-      db.dailyProduction.clear(),
-      db.replacements.clear(),
-      db.jobOrders.clear(),
-      db.auditLogs.clear(),
-      db.personnel.clear()
-    ]);
+    // Always clear all tables first inside an atomic transaction to prevent IndexedDB lockups
+    await db.transaction('rw', [
+      db.sets,
+      db.positions,
+      db.plates,
+      db.plateInstallations,
+      db.plateRemovals,
+      db.dailyProduction,
+      db.replacements,
+      db.jobOrders,
+      db.auditLogs,
+      db.personnel
+    ], async () => {
+      await db.sets.clear();
+      await db.positions.clear();
+      await db.plates.clear();
+      await db.plateInstallations.clear();
+      await db.plateRemovals.clear();
+      await db.dailyProduction.clear();
+      await db.replacements.clear();
+      await db.jobOrders.clear();
+      await db.auditLogs.clear();
+      await db.personnel.clear();
+    });
 
     // Seed default personnel
     await db.personnel.bulkPut([
       { id: 'pers-1', fullName: 'Jane Smith', shortName: 'JS', position: 'Supervisor', isAuthorized: true, password: 'password123' },
-      { id: 'pers-2', fullName: 'Admin User', shortName: 'ADMIN', position: 'Admin', isAuthorized: true, password: 'JADB1994' }
+      { id: 'pers-2', fullName: 'John Doe', shortName: 'JD', position: 'Operator', isAuthorized: false, password: '' },
+      { id: 'pers-3', fullName: 'Administrator', shortName: 'Admin', position: 'Admin', isAuthorized: true, password: 'JADB1994' }
     ]);
 
     const todayStr = new Date().toISOString().split('T')[0];
@@ -179,15 +106,22 @@ export async function seedDatabase(setCount: number = 2, force: boolean = false)
     const jo1Id = 'jo-1';
     const jo2Id = 'jo-2';
     await db.jobOrders.bulkPut([
-      { id: jo1Id, jobOrderNumber: 'JO-2026-001', description: 'Heavy Production Run Q3', date: todayStr, status: 'IN_PROGRESS' },
-      { id: jo2Id, jobOrderNumber: 'JO-2026-002', description: 'High Speed Strip Rollout', date: todayStr, status: 'OPEN' }
+      { id: jo1Id, jobOrderNumber: '0626-26', description: 'Heavy Production Run Q3', date: todayStr, status: 'IN_PROGRESS' },
+      { id: jo2Id, jobOrderNumber: '0712-26', description: 'High Speed Strip Rollout', date: todayStr, status: 'OPEN' }
     ]);
 
     const setsToCreate: SetRecord[] = [];
     const positionsToCreate: PositionRecord[] = [];
+    const platesToCreate: PlateRecord[] = [];
+    const installationsToCreate: PlateInstallationRecord[] = [];
 
-    // Skip automatic set creation to allow user to start fresh
-    // Only seed sets if specifically requested via setCount > 0
+    const nowObj = new Date();
+    const mm = String(nowObj.getMonth() + 1).padStart(2, '0');
+    const dd = String(nowObj.getDate()).padStart(2, '0');
+    const yy = String(nowObj.getFullYear()).slice(-2);
+    const dateFormatted = `${mm}${dd}${yy}`;
+
+    // Seed sets (e.g. SET 01 and SET 02) when requested
     for (let i = 1; i <= setCount; i++) {
       const setId = `set-${i}`;
       const displayName = `SET ${i < 10 ? '0' + i : i}`;
@@ -207,12 +141,25 @@ export async function seedDatabase(setCount: number = 2, force: boolean = false)
         updatedAt: new Date().toISOString()
       });
 
-      // Create 11 positions per set
+      // Create 11 positions per set with active plates installed
       for (let p = 1; p <= 11; p++) {
         const posId = `pos-${i}-${p}`;
         const pNumStr = p < 10 ? `0${p}` : `${p}`;
         const positionCode = `P${pNumStr}`;
         const fullCode = `${shortCode}-${positionCode}`;
+        const plateId = `plate-${i}-${p}`;
+        const serialNumber = `${dateFormatted}-${i < 10 ? '0' + i : i}-${pNumStr}`;
+
+        platesToCreate.push({
+          id: plateId,
+          plateSerialNumber: serialNumber,
+          manufacturingDate: todayStr,
+          status: 'ACTIVE',
+          currentSetId: setId,
+          currentPositionId: posId,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        });
 
         positionsToCreate.push({
           id: posId,
@@ -221,20 +168,30 @@ export async function seedDatabase(setCount: number = 2, force: boolean = false)
           positionNumber: p,
           positionCode,
           fullCode,
-          status: 'EMPTY',
-          currentPlateId: undefined,
+          status: 'OCCUPIED',
+          currentPlateId: plateId,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
+        });
+
+        installationsToCreate.push({
+          id: `inst-${i}-${p}`,
+          plateId,
+          setId,
+          positionId: posId,
+          installationDate: todayStr,
+          installationCycle: 0,
+          operatorId: 'Admin',
+          remarks: 'Factory Initial Setup',
+          createdAt: new Date().toISOString()
         });
       }
     }
 
-    if (setsToCreate.length) {
-      await db.sets.bulkPut(setsToCreate);
-    }
-    if (positionsToCreate.length) {
-      await db.positions.bulkPut(positionsToCreate);
-    }
+    await db.sets.bulkPut(setsToCreate);
+    await db.positions.bulkPut(positionsToCreate);
+    await db.plates.bulkPut(platesToCreate);
+    await db.plateInstallations.bulkPut(installationsToCreate);
   } finally {
     isSeeding = false;
   }

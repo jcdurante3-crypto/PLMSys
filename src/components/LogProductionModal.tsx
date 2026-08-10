@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { X, Activity, CheckCircle, ArrowRight, Edit3 } from 'lucide-react';
+import { X, Activity, CheckCircle, ArrowRight, Edit3, ShieldCheck, Lock, AlertCircle } from 'lucide-react';
 import { SetRecord, Personnel } from '../types';
+import { formatJobOrder, isValidJobOrder } from '../utils';
 
 interface LogProductionModalProps {
   sets: SetRecord[];
@@ -31,26 +32,68 @@ export const LogProductionModal: React.FC<LogProductionModalProps> = ({
   const [jobOrderNumber, setJobOrderNumber] = useState('');
   const [operatorName, setOperatorName] = useState('');
   const [checkedBy, setCheckedBy] = useState('');
+  const [isCheckedByVerified, setIsCheckedByVerified] = useState(false);
   const [remarks, setRemarks] = useState('Routine daily production logging');
   
   const [showConfirm, setShowConfirm] = useState(false);
   const [loading, setLoading] = useState(false);
   const [formError, setFormError] = useState('');
 
-  const handleCheckedByAuth = () => {
-    const password = prompt('Enter Authorization Password for Checked By:');
-    if (password === null) return;
+  // Authorization Modal state
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authPassword, setAuthPassword] = useState('');
+  const [authError, setAuthError] = useState('');
+
+  const renderPersonnelDatalist = (personnelList: Personnel[]) => {
+    const seen = new Set<string>();
+    const options: { value: string; label: string }[] = [];
+
+    personnelList.forEach(p => {
+      const name = p.shortName || p.fullName;
+      const norm = name.toUpperCase();
+      if (!seen.has(norm)) {
+        seen.add(norm);
+        options.push({ value: name, label: `${p.fullName} (${p.position})` });
+      }
+    });
+
+    return options.map(opt => (
+      <option key={opt.value} value={opt.value}>{opt.label}</option>
+    ));
+  };
+
+  const handleOpenAuthModal = () => {
+    setAuthError('');
+    setAuthPassword('');
+    setShowAuthModal(true);
+  };
+
+  const handleConfirmAuth = (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError('');
+
+    if (!authPassword.trim()) {
+      setAuthError('Please enter authorization password.');
+      return;
+    }
 
     const adminPassword = 'JADB1994';
-    const authPerson = personnel.find(p => p.isAuthorized && p.password === password);
-
-    if (password === adminPassword) {
+    if (authPassword === adminPassword) {
       setCheckedBy('Admin');
-    } else if (authPerson) {
-      setCheckedBy(authPerson.shortName);
-    } else {
-      alert('Unauthorized access. Invalid password.');
+      setIsCheckedByVerified(true);
+      setShowAuthModal(false);
+      return;
     }
+
+    const matched = personnel.find(p => p.password && p.password === authPassword);
+    if (matched) {
+      setCheckedBy(matched.shortName || matched.fullName);
+      setIsCheckedByVerified(true);
+      setShowAuthModal(false);
+      return;
+    }
+
+    setAuthError('Invalid password. Enter a valid supervisor or admin password.');
   };
 
   const fromSet = sets.find(s => s.id === fromSetId);
@@ -63,8 +106,14 @@ export const LogProductionModal: React.FC<LogProductionModalProps> = ({
     e.preventDefault();
     setFormError('');
     
-    if (!checkedBy) {
-      setFormError('Please authorize "Checked By" field.');
+    if (!isCheckedByVerified || !checkedBy.trim()) {
+      setFormError('Checked By requires password sign-off from an authorized supervisor or admin.');
+      handleOpenAuthModal();
+      return;
+    }
+    
+    if (!isValidJobOrder(jobOrderNumber)) {
+      setFormError('Job Order Number must be 4 numbers followed by dash and 2 numbers (e.g., 0000-00).');
       return;
     }
     
@@ -129,7 +178,7 @@ export const LogProductionModal: React.FC<LogProductionModalProps> = ({
           /* STEP 1: FILL FORM */
           <form onSubmit={handlePreSubmit} className="p-6 space-y-4">
             <div>
-              <label className="block text-xs font-semibold text-[#8E9299] uppercase mb-1.5">Master Set Range (From & To)</label>
+              <label className="block text-xs font-semibold text-[#8E9299] uppercase mb-1.5">Set Range (From & To)</label>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <span className="text-[10px] text-[#8E9299] mb-1 uppercase tracking-wider block">From Set</span>
@@ -168,55 +217,88 @@ export const LogProductionModal: React.FC<LogProductionModalProps> = ({
             <div>
               <label className="block text-xs font-semibold text-[#8E9299] uppercase mb-1">Production Cycles to Add</label>
               <input
-                type="number"
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
                 required
-                min={1}
+                placeholder="e.g. 2500"
                 value={cyclesInput}
-                onChange={(e) => setCyclesInput(e.target.value)}
+                onChange={(e) => setCyclesInput(e.target.value.replace(/\D/g, ''))}
                 className="w-full px-3 py-2 bg-[#191D28] border border-[#1E222A] rounded-lg text-sm font-mono text-white focus:outline-none focus:ring-2 focus:ring-[#F27D26]"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-[#8E9299] uppercase mb-1">Job Order Number</label>
+              <label className="block text-xs font-semibold text-[#8E9299] uppercase mb-1">Job Order Number *</label>
               <input
                 type="text"
                 required
-                placeholder="0123-26"
+                maxLength={7}
+                placeholder="0000-00"
                 value={jobOrderNumber}
-                onChange={(e) => setJobOrderNumber(e.target.value)}
-                className="w-full px-3 py-2 bg-[#191D28] border border-[#1E222A] rounded-lg text-sm font-mono text-white focus:outline-none focus:ring-2 focus:ring-[#F27D26]"
+                onChange={(e) => setJobOrderNumber(formatJobOrder(e.target.value))}
+                className="w-full px-3 py-2 bg-[#191D28] border border-[#1E222A] rounded-lg text-sm font-mono tracking-wider text-white focus:outline-none focus:ring-2 focus:ring-[#F27D26]"
               />
+              <span className="text-[11px] text-[#8E9299] mt-1 block">
+                Format: 4 digits - 2 digits (e.g. <strong className="text-white">0000-00</strong>)
+              </span>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="relative">
-                <label className="block text-xs font-semibold text-[#8E9299] uppercase mb-1">Operator</label>
+                <label className="block text-xs font-semibold text-[#8E9299] uppercase mb-1">Operator *</label>
                 <input
                   type="text"
                   list="operator-list-log"
                   required
+                  placeholder="Enter operator name..."
                   value={operatorName}
                   onChange={(e) => setOperatorName(e.target.value)}
                   className="w-full px-3 py-2 bg-[#191D28] border border-[#1E222A] rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-[#F27D26]"
                 />
                 <datalist id="operator-list-log">
-                  {personnel.map(p => (
-                    <option key={p.id} value={p.shortName} />
-                  ))}
+                  {renderPersonnelDatalist(personnel)}
                 </datalist>
               </div>
-              <div className="relative">
-                <label className="block text-xs font-semibold text-[#8E9299] uppercase mb-1">Checked By</label>
-                <input
-                  type="text"
-                  readOnly
-                  placeholder="Click to authorize..."
-                  required
-                  value={checkedBy}
-                  onClick={handleCheckedByAuth}
-                  className="w-full px-3 py-2 bg-[#191D28] border border-[#1E222A] rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-[#F27D26] cursor-pointer"
-                />
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-semibold text-[#8E9299] uppercase tracking-wider">Checked By *</label>
+                  {isCheckedByVerified && (
+                    <span className="text-[10px] text-emerald-400 font-bold flex items-center gap-1">
+                      <ShieldCheck className="w-3.5 h-3.5" /> Password Verified
+                    </span>
+                  )}
+                </div>
+                {!isCheckedByVerified ? (
+                  <div className="p-3 bg-[#191D28] border border-amber-500/30 rounded-xl flex items-center justify-between gap-3 shadow-inner">
+                    <div className="flex items-center gap-2 text-amber-400 text-xs">
+                      <Lock className="w-4 h-4 shrink-0" />
+                      <span className="font-medium">Password required. Authorized person must sign off on details.</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleOpenAuthModal}
+                      className="px-3.5 py-2 bg-[#F27D26] hover:bg-[#d96a1a] text-white rounded-lg text-xs font-bold transition-all shadow cursor-pointer shrink-0 flex items-center gap-1.5"
+                    >
+                      <ShieldCheck className="w-4 h-4" />
+                      Sign Off & Authorize
+                    </button>
+                  </div>
+                ) : (
+                  <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2 text-emerald-400 text-xs font-semibold">
+                      <CheckCircle className="w-4 h-4 shrink-0 text-emerald-400" />
+                      <span>Checked & Verified By: <strong className="text-white text-sm ml-1 underline">{checkedBy}</strong></span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleOpenAuthModal}
+                      className="text-xs text-[#8E9299] hover:text-white underline cursor-pointer shrink-0 font-medium"
+                    >
+                      Change Sign-Off
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -273,7 +355,7 @@ export const LogProductionModal: React.FC<LogProductionModalProps> = ({
               </div>
               <div className="py-2.5 flex justify-between">
                 <span className="text-[#8E9299]">Total Sets Affected:</span>
-                <span className="font-bold text-[#F27D26]">{matchedSetsCount} Master Sets</span>
+                <span className="font-bold text-[#F27D26]">{matchedSetsCount} Sets</span>
               </div>
               <div className="py-2.5 flex justify-between">
                 <span className="text-[#8E9299]">Cycles per Set:</span>
@@ -333,6 +415,76 @@ export const LogProductionModal: React.FC<LogProductionModalProps> = ({
           </div>
         )}
       </div>
+
+      {/* AUTHORIZATION MODAL DIALOG */}
+      {showAuthModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fadeIn">
+          <div className="bg-[#0F1117] border border-[#1E222A] rounded-2xl p-6 w-full max-w-md space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-[#1E222A] pb-3">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-5 h-5 text-[#F27D26]" />
+                <h3 className="text-base font-bold text-white">Supervisor Authorization</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAuthModal(false)}
+                className="text-[#8E9299] hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmAuth} className="space-y-4">
+              <div className="p-3 bg-[#191D28] border border-[#1E222A] rounded-xl text-xs text-[#8E9299]">
+                <p className="font-semibold text-white mb-1 flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-[#F27D26]" /> Double-Check Details Verification
+                </p>
+                By authorizing this sign-off, you confirm that you have inspected and verified the set range, cycles, job order, operator, and production parameters for this run.
+              </div>
+
+
+
+              <div>
+                <label className="block text-xs font-semibold text-[#8E9299] uppercase mb-1">
+                  Authorization Password
+                </label>
+                <input
+                  type="password"
+                  required
+                  autoFocus
+                  placeholder="Enter authorization password..."
+                  value={authPassword}
+                  onChange={(e) => setAuthPassword(e.target.value)}
+                  className="w-full px-3 py-2 bg-[#191D28] border border-[#1E222A] rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-[#F27D26]"
+                />
+              </div>
+
+              {authError && (
+                <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-lg flex items-center gap-2 text-rose-400 text-xs font-semibold">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{authError}</span>
+                </div>
+              )}
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#1E222A]">
+                <button
+                  type="button"
+                  onClick={() => setShowAuthModal(false)}
+                  className="px-4 py-2 bg-[#191D28] hover:bg-[#252A38] border border-[#1E222A] text-[#8E9299] rounded-lg text-xs font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-[#F27D26] hover:bg-[#d96a1f] text-white rounded-lg text-xs font-bold shadow-md cursor-pointer"
+                >
+                  Confirm Authorization
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

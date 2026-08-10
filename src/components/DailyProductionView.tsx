@@ -1,17 +1,19 @@
 import React, { useState } from 'react';
 import { DailyProductionRecord, SetRecord, JobOrderRecord } from '../types';
-import { Activity, Calendar, FileText, CheckCircle2, Search } from 'lucide-react';
+import { Activity, Calendar, FileText, CheckCircle2, Search, Plus } from 'lucide-react';
 
 interface DailyProductionViewProps {
   dailyProductions: DailyProductionRecord[];
   sets: SetRecord[];
   jobOrders: JobOrderRecord[];
+  onOpenLogProduction?: () => void;
 }
 
 export const DailyProductionView: React.FC<DailyProductionViewProps> = ({
   dailyProductions,
   sets,
   jobOrders,
+  onOpenLogProduction,
 }) => {
   const [operatorFilter, setOperatorFilter] = useState('');
   const [setFilter, setSetFilter] = useState('ALL');
@@ -36,9 +38,18 @@ export const DailyProductionView: React.FC<DailyProductionViewProps> = ({
               <Activity className="w-5 h-5 text-[#F27D26]" /> Daily Production Records
             </h2>
             <p className="text-xs text-[#8E9299]">
-              Master Set production logs showing previous cycle, today's added production, and current cumulative cycle.
+              Set production logs showing previous cycle, today's added production, and current cumulative cycle.
             </p>
           </div>
+          {onOpenLogProduction && (
+            <button
+              onClick={onOpenLogProduction}
+              className="flex items-center gap-2 px-4 py-2 bg-[#F27D26] hover:bg-[#d96a1a] text-white rounded-lg text-sm font-bold transition-all shadow-md cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              Log Production
+            </button>
+          )}
         </div>
 
         {/* Filters */}
@@ -88,7 +99,7 @@ export const DailyProductionView: React.FC<DailyProductionViewProps> = ({
                     </td>
                     <td className="p-3 text-[#E0E2E5] whitespace-nowrap">
                       <span className="bg-[#191D28] px-2 py-1 rounded text-xs font-mono font-semibold text-[#8E9299] border border-[#1E222A]">
-                        {prod.jobOrderId || '0123-26'}
+                        {prod.jobOrderId || 'N/A'}
                       </span>
                     </td>
                     <td className="p-3 text-right font-mono text-[#8E9299]">{prod.previousTotalCycle.toLocaleString()}</td>

@@ -1,19 +1,17 @@
 {
-  "name": "plate-lifecycle-management-system",
+  "name": "react-example",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.0",
   "type": "module",
-  "main": "electron/main.js",
+  "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
     "build": "vite build",
     "preview": "vite preview",
-    "clean": "rm -rf dist release server.js",
+    "clean": "rm -rf dist dist-electron server.js",
     "lint": "tsc --noEmit",
-    "electron": "electron .",
-    "electron:dev": "vite --port=3000 --host=0.0.0.0",
-    "electron:build": "vite build && electron-builder",
-    "electron:pack": "vite build && electron-builder --dir"
+    "electron:dev": "concurrently \"npm run dev\" \"wait-on http://localhost:3000 && electron .\"",
+    "electron:build": "vite build && esbuild electron/main.ts --bundle --platform=node --format=cjs --outfile=dist-electron/main.js --external:electron && electron-builder"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
@@ -25,18 +23,41 @@
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
     "react": "^19.0.1",
-    "react-dom": "^19.0.1"
+    "react-dom": "^19.0.1",
+    "vite": "^6.2.3"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",
     "autoprefixer": "^10.4.21",
+    "concurrently": "^9.1.2",
     "electron": "^43.3.0",
     "electron-builder": "^26.15.3",
     "esbuild": "^0.25.0",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
-    "vite": "^6.2.3"
+    "vite": "^6.2.3",
+    "wait-on": "^8.0.2"
+  },
+  "build": {
+    "appId": "com.plm.system",
+    "productName": "Mold Plate Lifecycle Management",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*"
+    ],
+    "win": {
+      "target": ["nsis", "portable"]
+    },
+    "mac": {
+      "target": ["dmg"]
+    },
+    "linux": {
+      "target": ["AppImage"]
+    }
   }
 }
