@@ -47,13 +47,18 @@ logToFile('info', `Packaged: ${app.isPackaged}`);
 logToFile('info', `Data folder set to: ${dataDirectory}`);
 
 function createWindow() {
+  const appPath = app.getAppPath();
+  const preloadPath = path.isAbsolute(path.join(__dirname, 'preload.cjs'))
+    ? path.join(__dirname, 'preload.cjs')
+    : path.join(appPath, 'dist-electron', 'preload.cjs');
+
   const mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      preload: path.join(__dirname, 'preload.cjs'),
+      preload: preloadPath,
     },
     autoHideMenuBar: true,
   });
@@ -62,7 +67,8 @@ function createWindow() {
     mainWindow.loadURL('http://localhost:3000');
     mainWindow.webContents.openDevTools();
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+    const indexPath = path.join(appPath, 'dist', 'index.html');
+    mainWindow.loadFile(indexPath);
   }
 }
 

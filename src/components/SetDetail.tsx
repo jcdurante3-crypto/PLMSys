@@ -123,14 +123,6 @@ export const SetDetail: React.FC<SetDetailProps> = ({
       return;
     }
 
-    const adminPassword = 'JADB1994';
-    if (authPassword === adminPassword) {
-      setCheckedByInput('Admin');
-      setIsCheckedByVerified(true);
-      setShowAuthModal(false);
-      return;
-    }
-
     const matched = personnel.find(p => p.password && p.password === authPassword);
     if (matched) {
       setCheckedByInput(matched.shortName || matched.fullName);

@@ -1203,6 +1203,7 @@ export default function App() {
 
       {showLoginModal && (
         <LoginModal
+          personnel={personnel}
           onClose={() => setShowLoginModal(false)}
           onLogin={handleLogin}
         />
@@ -1219,6 +1220,7 @@ export default function App() {
 
       {showAdminLoginModal && (
         <AdminLoginModal
+          personnel={personnel}
           onClose={() => setShowAdminLoginModal(false)}
           onLogin={handleAdminLogin}
         />

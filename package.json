@@ -42,7 +42,7 @@
   },
   "build": {
     "appId": "com.plm.system",
-    "productName": "Mold Plate Lifecycle Management",
+    "productName": "Plate Lifecycle Management System",
     "directories": {
       "output": "release"
     },
@@ -51,7 +51,7 @@
       "dist-electron/**/*"
     ],
     "win": {
-      "target": ["nsis", "portable"]
+      "target": ["portable"]
     },
     "mac": {
       "target": ["dmg"]

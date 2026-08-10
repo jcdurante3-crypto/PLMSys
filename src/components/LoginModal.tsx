@@ -1,21 +1,27 @@
 import React, { useState } from 'react';
 import { X, User as UserIcon, Lock } from 'lucide-react';
-import { User } from '../types';
+import { User, Personnel } from '../types';
 
 interface LoginModalProps {
   onClose: () => void;
   onLogin: (user: User) => void;
+  personnel: Personnel[];
 }
 
-export const LoginModal: React.FC<LoginModalProps> = ({ onClose, onLogin }) => {
+export const LoginModal: React.FC<LoginModalProps> = ({ onClose, onLogin, personnel }) => {
   const [isAskingForAdminPassword, setIsAskingForAdminPassword] = useState(false);
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
 
   const handleLogin = (role: 'ADMIN' | 'OPERATOR', passwordInput?: string) => {
     if (role === 'ADMIN') {
-      if (passwordInput === 'JADB1994') {
-        onLogin({ name: 'Administrator', role: 'ADMIN' });
+      const matchedAdmin = personnel.find(
+        (p) =>
+          (p.position === 'Admin' || p.fullName === 'Administrator') &&
+          p.password === passwordInput
+      );
+      if (matchedAdmin) {
+        onLogin({ name: matchedAdmin.fullName, role: 'ADMIN' });
         onClose();
       } else {
         setError('Invalid password');

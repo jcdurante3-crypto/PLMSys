@@ -77,14 +77,6 @@ export const LogProductionModal: React.FC<LogProductionModalProps> = ({
       return;
     }
 
-    const adminPassword = 'JADB1994';
-    if (authPassword === adminPassword) {
-      setCheckedBy('Admin');
-      setIsCheckedByVerified(true);
-      setShowAuthModal(false);
-      return;
-    }
-
     const matched = personnel.find(p => p.password && p.password === authPassword);
     if (matched) {
       setCheckedBy(matched.shortName || matched.fullName);

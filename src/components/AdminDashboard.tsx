@@ -14,13 +14,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExportBackup, 
   const [isRestoring, setIsRestoring] = useState(false);
   const [restoreSuccess, setRestoreSuccess] = useState(false);
   const [restoreError, setRestoreError] = useState('');
+  const [confirmationText, setConfirmationText] = useState('');
 
   const handleConfirmRestore = async () => {
+    if (confirmationText.trim().toUpperCase() !== 'RESET') {
+      setRestoreError('Please type "RESET" exactly to confirm.');
+      return;
+    }
     setIsRestoring(true);
     setRestoreError('');
     try {
       await onRestoreFactory();
       setRestoreSuccess(true);
+      setConfirmationText('');
       setTimeout(() => {
         setRestoreSuccess(false);
         setShowRestoreModal(false);
@@ -202,12 +208,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExportBackup, 
             <div className="flex items-center justify-between border-b border-[#1E222A] pb-3">
               <div className="flex items-center gap-2 text-rose-500">
                 <AlertCircle className="w-5 h-5" />
-                <h3 className="text-base font-bold text-white">Restore Factory Settings</h3>
+                <h3 className="text-base font-bold text-white">Factory Reset</h3>
               </div>
               {!isRestoring && (
                 <button
                   type="button"
-                  onClick={() => setShowRestoreModal(false)}
+                  onClick={() => {
+                    setConfirmationText('');
+                    setShowRestoreModal(false);
+                  }}
                   className="text-[#8E9299] hover:text-white"
                 >
                   <X className="w-5 h-5" />
@@ -224,16 +233,34 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExportBackup, 
             ) : (
               <>
                 <div className="space-y-3">
-                  <p className="text-sm text-gray-300 leading-relaxed">
-                    Are you sure you want to restore factory settings?
+                  <p className="text-xs text-rose-400 uppercase font-bold tracking-wider">Warning: Critical Action</p>
+                  <p className="text-sm text-gray-300 leading-relaxed whitespace-pre-wrap">
+                    This will permanently erase ALL PLMSys data,
+including personnel, plates, job orders,
+production records, history, and settings.
+
+This action cannot be undone.
+
+Do you want to continue?
                   </p>
-                  <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-lg text-xs text-rose-300 leading-relaxed">
-                    <strong>WARNING:</strong> This action will permanently erase all Sets, Positions, Plate Registrations, Production Logs, Audit Logs, and customized Personnel, restoring initial defaults.
+                  
+                  <div className="space-y-1.5 pt-2">
+                    <label className="text-[10px] font-bold text-[#8E9299] uppercase tracking-wider block">
+                      Type <span className="text-rose-400">RESET</span> to confirm:
+                    </label>
+                    <input
+                      type="text"
+                      value={confirmationText}
+                      onChange={(e) => setConfirmationText(e.target.value)}
+                      placeholder="RESET"
+                      disabled={isRestoring}
+                      className="w-full px-3 py-2 bg-[#0A0B0E] border border-[#1E222A] text-white rounded-lg text-xs focus:outline-none focus:border-rose-500 transition-colors uppercase font-mono tracking-widest text-center"
+                    />
                   </div>
                 </div>
 
                 {restoreError && (
-                  <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-lg text-xs text-rose-400">
+                  <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-lg text-xs text-rose-400 font-semibold">
                     {restoreError}
                   </div>
                 )}
@@ -242,16 +269,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExportBackup, 
                   <button
                     type="button"
                     disabled={isRestoring}
-                    onClick={() => setShowRestoreModal(false)}
+                    onClick={() => {
+                      setConfirmationText('');
+                      setShowRestoreModal(false);
+                    }}
                     className="px-4 py-2 bg-[#191D28] hover:bg-[#252A38] border border-[#1E222A] text-gray-300 rounded-lg text-xs font-semibold disabled:opacity-50"
                   >
                     Cancel
                   </button>
                   <button
                     type="button"
-                    disabled={isRestoring}
+                    disabled={isRestoring || confirmationText.trim().toUpperCase() !== 'RESET'}
                     onClick={handleConfirmRestore}
-                    className="flex items-center gap-2 px-5 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-xs font-bold shadow-md cursor-pointer disabled:opacity-50"
+                    className="flex items-center gap-2 px-5 py-2 bg-rose-600 hover:bg-rose-500 disabled:bg-rose-600/30 text-white rounded-lg text-xs font-bold shadow-md cursor-pointer disabled:opacity-50 transition-all"
                   >
                     {isRestoring ? (
                       <>
