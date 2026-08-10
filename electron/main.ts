@@ -3,9 +3,9 @@ import * as path from 'path';
 import * as fs from 'fs';
 
 // Determine executable/project directory
-const executableDirectory = app.isPackaged
-  ? path.dirname(process.execPath)
-  : process.cwd();
+const executableDirectory = process.env.PORTABLE_EXECUTABLE_DIR
+  ? process.env.PORTABLE_EXECUTABLE_DIR
+  : (app.isPackaged ? path.dirname(process.execPath) : process.cwd());
 
 // Portable data directory path adjacent to executable/project root
 const dataDirectory = path.join(executableDirectory, 'data');
@@ -44,6 +44,8 @@ function logToFile(level: string, message: string) {
 
 logToFile('info', 'Application main process starting...');
 logToFile('info', `Packaged: ${app.isPackaged}`);
+logToFile('info', `PORTABLE_EXECUTABLE_DIR env: ${process.env.PORTABLE_EXECUTABLE_DIR || 'not defined'}`);
+logToFile('info', `Executable/project root directory: ${executableDirectory}`);
 logToFile('info', `Data folder set to: ${dataDirectory}`);
 
 // Portable JSON Database Helpers

@@ -121,6 +121,19 @@ export async function seedDatabase(setCount: number = 2, force: boolean = false)
       if (hasInitialized) {
         return;
       }
+      
+      // Secondary safety check: check if database tables already have records in IndexedDB
+      try {
+        const existingSetsCount = await db.sets.count();
+        const existingPersonnelCount = await db.personnel.count();
+        if (existingSetsCount > 0 || existingPersonnelCount > 0) {
+          localStorage.setItem('plmsys_browser_initialized', 'true');
+          return;
+        }
+      } catch (dbCheckErr) {
+        console.warn('Failed to check database counts, proceeding with fallback check:', dbCheckErr);
+      }
+      
       localStorage.setItem('plmsys_browser_initialized', 'true');
     }
 
