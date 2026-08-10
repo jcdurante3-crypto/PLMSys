@@ -281,7 +281,7 @@ export const LogProductionModal: React.FC<LogProductionModalProps> = ({
                   )}
                 </div>
                 {!isCheckedByVerified ? (
-                  <div className="p-3 bg-[#191D28] border border-amber-500/30 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-inner">
+                  <div className="p-3 bg-[#191D28] border border-amber-500/30 rounded-xl flex flex-col gap-3 shadow-inner">
                     <div className="flex items-start gap-2 text-amber-400 text-xs">
                       <Lock className="w-4 h-4 shrink-0 mt-0.5" />
                       <span className="font-medium leading-relaxed">Password required. Authorized person must sign off on details.</span>
@@ -289,14 +289,14 @@ export const LogProductionModal: React.FC<LogProductionModalProps> = ({
                     <button
                       type="button"
                       onClick={handleOpenAuthModal}
-                      className="w-full sm:w-auto px-3.5 py-2 bg-[#F27D26] hover:bg-[#d96a1a] text-white rounded-lg text-xs font-bold transition-all shadow cursor-pointer shrink-0 flex items-center justify-center gap-1.5"
+                      className="w-full px-3.5 py-2 bg-[#F27D26] hover:bg-[#d96a1a] text-white rounded-lg text-xs font-bold transition-all shadow cursor-pointer shrink-0 flex items-center justify-center gap-1.5"
                     >
                       <ShieldCheck className="w-4 h-4" />
                       Sign Off & Authorize
                     </button>
                   </div>
                 ) : (
-                  <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl flex flex-col gap-2.5">
                     <div className="flex items-start gap-2 text-emerald-400 text-xs font-semibold">
                       <CheckCircle className="w-4 h-4 shrink-0 text-emerald-400 mt-0.5" />
                       <span className="leading-relaxed">Checked & Verified By: <strong className="text-white text-sm ml-1 underline">{checkedBy}</strong></span>
@@ -304,7 +304,7 @@ export const LogProductionModal: React.FC<LogProductionModalProps> = ({
                     <button
                       type="button"
                       onClick={handleOpenAuthModal}
-                      className="text-xs text-[#8E9299] hover:text-white underline cursor-pointer shrink-0 font-medium self-end sm:self-auto"
+                      className="text-xs text-[#8E9299] hover:text-white underline cursor-pointer shrink-0 font-medium self-end"
                     >
                       Change Sign-Off
                     </button>

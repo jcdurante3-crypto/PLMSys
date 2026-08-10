@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Layers, Plus, AlertCircle } from 'lucide-react';
 import { SetRecord, Personnel } from '../types';
 
@@ -15,14 +15,47 @@ export const CreateSetModal: React.FC<CreateSetModalProps> = ({
 }) => {
   const nextNum = sets.length > 0 ? Math.max(...sets.map(s => s.setNumber)) + 1 : 1;
   const todayStr = new Date().toISOString().split('T')[0];
-  const [setNumber, setSetNumber] = useState(nextNum);
-  const [displayName, setDisplayName] = useState(`SET ${nextNum < 10 ? '0' + nextNum : nextNum}`);
-  const [shortCode, setShortCode] = useState(`S${nextNum < 10 ? '0' + nextNum : nextNum}`);
-  const [creationDate, setCreationDate] = useState(todayStr);
-  const [initialCycle, setInitialCycle] = useState(0);
-  const [numPlates, setNumPlates] = useState<number>(11);
+  const [setNumber, setSetNumber] = useState(() => {
+    const saved = localStorage.getItem('draft_set_number');
+    return saved ? parseInt(saved, 10) : nextNum;
+  });
+  const [displayName, setDisplayName] = useState(() => {
+    return localStorage.getItem('draft_set_displayName') || `SET ${nextNum < 10 ? '0' + nextNum : nextNum}`;
+  });
+  const [shortCode, setShortCode] = useState(() => {
+    return localStorage.getItem('draft_set_shortCode') || `S${nextNum < 10 ? '0' + nextNum : nextNum}`;
+  });
+  const [creationDate, setCreationDate] = useState(() => {
+    return localStorage.getItem('draft_set_creationDate') || todayStr;
+  });
+  const [initialCycle, setInitialCycle] = useState(() => {
+    const saved = localStorage.getItem('draft_set_initialCycle');
+    return saved ? parseInt(saved, 10) : 0;
+  });
+  const [numPlates, setNumPlates] = useState<number>(() => {
+    const saved = localStorage.getItem('draft_set_numPlates');
+    return saved ? parseInt(saved, 10) : 11;
+  });
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    localStorage.setItem('draft_set_number', String(setNumber));
+    localStorage.setItem('draft_set_displayName', displayName);
+    localStorage.setItem('draft_set_shortCode', shortCode);
+    localStorage.setItem('draft_set_creationDate', creationDate);
+    localStorage.setItem('draft_set_initialCycle', String(initialCycle));
+    localStorage.setItem('draft_set_numPlates', String(numPlates));
+  }, [setNumber, displayName, shortCode, creationDate, initialCycle, numPlates]);
+
+  const clearDrafts = () => {
+    localStorage.removeItem('draft_set_number');
+    localStorage.removeItem('draft_set_displayName');
+    localStorage.removeItem('draft_set_shortCode');
+    localStorage.removeItem('draft_set_creationDate');
+    localStorage.removeItem('draft_set_initialCycle');
+    localStorage.removeItem('draft_set_numPlates');
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -30,6 +63,7 @@ export const CreateSetModal: React.FC<CreateSetModalProps> = ({
     setLoading(true);
     try {
       await onCreateSet(setNumber, displayName, shortCode, initialCycle, numPlates, creationDate);
+      clearDrafts();
       onClose();
     } catch (err) {
       console.error(err);

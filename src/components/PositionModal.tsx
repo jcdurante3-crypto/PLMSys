@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { PositionRecord, SetRecord, PlateRecord, PlateInstallationRecord, PlateRemovalRecord, Personnel } from '../types';
 import { X, AlertTriangle, Calendar, User, Wrench, Barcode, ArrowRight, Clock, History, CheckCircle, Info } from 'lucide-react';
 
@@ -51,13 +51,18 @@ export const PositionModal: React.FC<PositionModalProps> = ({
 
   // Install Form State
   const todayStr = new Date().toISOString().split('T')[0];
-  const [mfgDate, setMfgDate] = useState(todayStr);
+  const [mfgDate, setMfgDate] = useState(() => localStorage.getItem('draft_pos_mfgDate') || todayStr);
   const [operatorId, setOperatorId] = useState(() => {
+    const saved = localStorage.getItem('draft_pos_operatorId');
+    if (saved) return saved;
     if (personnel && personnel.length > 0) return personnel[0].shortName;
     return 'Admin';
   });
-  const [remarks, setRemarks] = useState('');
-  const [initialCycles, setInitialCycles] = useState<number>(0);
+  const [remarks, setRemarks] = useState(() => localStorage.getItem('draft_pos_remarks') || '');
+  const [initialCycles, setInitialCycles] = useState<number>(() => {
+    const saved = localStorage.getItem('draft_pos_initialCycles');
+    return saved !== null ? parseInt(saved, 10) : 0;
+  });
 
   // Auto-generate serial preview: MMDDYY-SET-POSITION
   const dateObj = new Date(mfgDate);
@@ -69,15 +74,60 @@ export const PositionModal: React.FC<PositionModalProps> = ({
   const generatedSerial = `${mm}${dd}${yy}-${setNumStr}-${posNumStr}`;
 
   // Replace Form State
-  const [replaceInstallDate, setReplaceInstallDate] = useState(todayStr);
-  const [evaluationStatus, setEvaluationStatus] = useState<'RETIRED' | 'REJECTED'>('REJECTED');
-  const [rejectTypes, setRejectTypes] = useState<string[]>(['Excessive Wear']);
-  const [otherRejectText, setOtherRejectText] = useState('');
-  const [rejectDescription, setRejectDescription] = useState('');
-  const [sourceOfReject, setSourceOfReject] = useState('');
-  const [correctiveAction, setCorrectiveAction] = useState('');
+  const [replaceInstallDate, setReplaceInstallDate] = useState(() => localStorage.getItem('draft_pos_replaceInstallDate') || todayStr);
+  const [evaluationStatus, setEvaluationStatus] = useState<'RETIRED' | 'REJECTED'>(() => {
+    return (localStorage.getItem('draft_pos_evaluationStatus') as any) || 'REJECTED';
+  });
+  const [rejectTypes, setRejectTypes] = useState<string[]>(() => {
+    const saved = localStorage.getItem('draft_pos_rejectTypes');
+    return saved ? JSON.parse(saved) : ['Excessive Wear'];
+  });
+  const [otherRejectText, setOtherRejectText] = useState(() => localStorage.getItem('draft_pos_otherRejectText') || '');
+  const [rejectDescription, setRejectDescription] = useState(() => localStorage.getItem('draft_pos_rejectDescription') || '');
+  const [sourceOfReject, setSourceOfReject] = useState(() => localStorage.getItem('draft_pos_sourceOfReject') || '');
+  const [correctiveAction, setCorrectiveAction] = useState(() => localStorage.getItem('draft_pos_correctiveAction') || '');
   const [warningMessage, setWarningMessage] = useState('');
   const [showConfirmReplace, setShowConfirmReplace] = useState(false);
+
+  useEffect(() => {
+    localStorage.setItem('draft_pos_mfgDate', mfgDate);
+    localStorage.setItem('draft_pos_operatorId', operatorId);
+    localStorage.setItem('draft_pos_remarks', remarks);
+    localStorage.setItem('draft_pos_initialCycles', String(initialCycles));
+    localStorage.setItem('draft_pos_replaceInstallDate', replaceInstallDate);
+    localStorage.setItem('draft_pos_evaluationStatus', evaluationStatus);
+    localStorage.setItem('draft_pos_rejectTypes', JSON.stringify(rejectTypes));
+    localStorage.setItem('draft_pos_otherRejectText', otherRejectText);
+    localStorage.setItem('draft_pos_rejectDescription', rejectDescription);
+    localStorage.setItem('draft_pos_sourceOfReject', sourceOfReject);
+    localStorage.setItem('draft_pos_correctiveAction', correctiveAction);
+  }, [
+    mfgDate,
+    operatorId,
+    remarks,
+    initialCycles,
+    replaceInstallDate,
+    evaluationStatus,
+    rejectTypes,
+    otherRejectText,
+    rejectDescription,
+    sourceOfReject,
+    correctiveAction
+  ]);
+
+  const clearDrafts = () => {
+    localStorage.removeItem('draft_pos_mfgDate');
+    localStorage.removeItem('draft_pos_operatorId');
+    localStorage.removeItem('draft_pos_remarks');
+    localStorage.removeItem('draft_pos_initialCycles');
+    localStorage.removeItem('draft_pos_replaceInstallDate');
+    localStorage.removeItem('draft_pos_evaluationStatus');
+    localStorage.removeItem('draft_pos_rejectTypes');
+    localStorage.removeItem('draft_pos_otherRejectText');
+    localStorage.removeItem('draft_pos_rejectDescription');
+    localStorage.removeItem('draft_pos_sourceOfReject');
+    localStorage.removeItem('draft_pos_correctiveAction');
+  };
 
   const handleRejectTypeToggle = (type: string) => {
     if (rejectTypes.includes(type)) {
@@ -108,6 +158,7 @@ export const PositionModal: React.FC<PositionModalProps> = ({
   const handleInstallSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     onInstallPlate(position.id, setRecord.id, generatedSerial, mfgDate, operatorId, remarks, initialCycles);
+    clearDrafts();
   };
 
   const handleReplaceSubmit = (e: React.FormEvent) => {
@@ -156,6 +207,7 @@ export const PositionModal: React.FC<PositionModalProps> = ({
       finalSource,
       finalAction
     );
+    clearDrafts();
   };
 
   const plateLife = installation
