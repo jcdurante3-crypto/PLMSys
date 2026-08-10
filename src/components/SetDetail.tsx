@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { SetRecord, PositionRecord, PlateRecord, JobOrderRecord, PlateInstallationRecord, DailyProductionRecord, Personnel } from '../types';
 import { ArrowLeft, Activity, Plus, Wrench, Trash2, RefreshCw, CheckCircle, AlertTriangle, ShieldCheck, Calendar, User, ChevronLeft, ChevronRight, Layers, Lock, X, AlertCircle } from 'lucide-react';
 import { formatJobOrder, isValidJobOrder } from '../utils';
@@ -34,16 +34,32 @@ export const SetDetail: React.FC<SetDetailProps> = ({
   onOpenPositionModal,
   onDeleteSet,
 }) => {
-  const [productionCyclesInput, setProductionCyclesInput] = useState('');
-  const [jobOrderInput, setJobOrderInput] = useState('');
-  const [operatorNameInput, setOperatorNameInput] = useState('');
+  const [productionCyclesInput, setProductionCyclesInput] = useState(() => localStorage.getItem('draft_set_productionCyclesInput') || '');
+  const [jobOrderInput, setJobOrderInput] = useState(() => localStorage.getItem('draft_set_jobOrderInput') || '');
+  const [operatorNameInput, setOperatorNameInput] = useState(() => localStorage.getItem('draft_set_operatorNameInput') || '');
   const [checkedByInput, setCheckedByInput] = useState('');
   const [isCheckedByVerified, setIsCheckedByVerified] = useState(false);
-  const [remarksInput, setRemarksInput] = useState('');
+  const [remarksInput, setRemarksInput] = useState(() => localStorage.getItem('draft_set_remarksInput') || '');
   const [showProductionForm, setShowProductionForm] = useState(false);
   const [formError, setFormError] = useState('');
   const [showConfirmSubmit, setShowConfirmSubmit] = useState(false);
-  const [selectedPositionId, setSelectedPositionId] = useState<string>('ALL');
+  const [selectedPositionId, setSelectedPositionId] = useState<string>(() => localStorage.getItem('draft_set_selectedPositionId') || 'ALL');
+
+  useEffect(() => {
+    localStorage.setItem('draft_set_productionCyclesInput', productionCyclesInput);
+    localStorage.setItem('draft_set_jobOrderInput', jobOrderInput);
+    localStorage.setItem('draft_set_operatorNameInput', operatorNameInput);
+    localStorage.setItem('draft_set_remarksInput', remarksInput);
+    localStorage.setItem('draft_set_selectedPositionId', selectedPositionId);
+  }, [productionCyclesInput, jobOrderInput, operatorNameInput, remarksInput, selectedPositionId]);
+
+  const clearDrafts = () => {
+    localStorage.removeItem('draft_set_productionCyclesInput');
+    localStorage.removeItem('draft_set_jobOrderInput');
+    localStorage.removeItem('draft_set_operatorNameInput');
+    localStorage.removeItem('draft_set_remarksInput');
+    localStorage.removeItem('draft_set_selectedPositionId');
+  };
 
   const currentIndex = sets.findIndex(s => s.id === setRecord.id);
   const prevSet = currentIndex > 0 ? sets[currentIndex - 1] : null;
@@ -137,6 +153,7 @@ export const SetDetail: React.FC<SetDetailProps> = ({
   const executeProductionSubmit = () => {
     const cycles = parseInt(productionCyclesInput, 10);
     onAddProduction(setRecord.id, selectedPositionId, cycles, jobOrderInput, operatorNameInput, checkedByInput, remarksInput);
+    clearDrafts();
     setProductionCyclesInput('');
     setRemarksInput('');
     setCheckedByInput('');
@@ -374,30 +391,30 @@ export const SetDetail: React.FC<SetDetailProps> = ({
                 )}
               </div>
               {!isCheckedByVerified ? (
-                <div className="p-3 bg-[#191D28] border border-amber-500/30 rounded-xl flex items-center justify-between gap-3 shadow-inner">
-                  <div className="flex items-center gap-2 text-amber-400 text-xs">
-                    <Lock className="w-4 h-4 shrink-0" />
-                    <span className="font-medium">Password required. Authorized person must sign off on details.</span>
+                <div className="p-3 bg-[#191D28] border border-amber-500/30 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-inner">
+                  <div className="flex items-start gap-2 text-amber-400 text-xs">
+                    <Lock className="w-4 h-4 shrink-0 mt-0.5" />
+                    <span className="font-medium leading-relaxed">Password required. Authorized person must sign off on details.</span>
                   </div>
                   <button
                     type="button"
                     onClick={handleOpenAuthModal}
-                    className="px-3.5 py-2 bg-[#F27D26] hover:bg-[#d96a1a] text-white rounded-lg text-xs font-bold transition-all shadow cursor-pointer shrink-0 flex items-center gap-1.5"
+                    className="w-full sm:w-auto px-3.5 py-2 bg-[#F27D26] hover:bg-[#d96a1a] text-white rounded-lg text-xs font-bold transition-all shadow cursor-pointer shrink-0 flex items-center justify-center gap-1.5"
                   >
                     <ShieldCheck className="w-4 h-4" />
                     Sign Off & Authorize
                   </button>
                 </div>
               ) : (
-                <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2 text-emerald-400 text-xs font-semibold">
-                    <CheckCircle className="w-4 h-4 shrink-0 text-emerald-400" />
-                    <span>Checked & Verified By: <strong className="text-white text-sm ml-1 underline">{checkedByInput}</strong></span>
+                <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-start gap-2 text-emerald-400 text-xs font-semibold">
+                    <CheckCircle className="w-4 h-4 shrink-0 text-emerald-400 mt-0.5" />
+                    <span className="leading-relaxed">Checked & Verified By: <strong className="text-white text-sm ml-1 underline">{checkedByInput}</strong></span>
                   </div>
                   <button
                     type="button"
                     onClick={handleOpenAuthModal}
-                    className="text-xs text-[#8E9299] hover:text-white underline cursor-pointer shrink-0 font-medium"
+                    className="text-xs text-[#8E9299] hover:text-white underline cursor-pointer shrink-0 font-medium self-end sm:self-auto"
                   >
                     Change Sign-Off
                   </button>

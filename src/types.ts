@@ -164,6 +164,8 @@ declare global {
       writeLog: (level: string, message: string) => Promise<void>;
       getAppInfo: () => Promise<{ isPackaged: boolean; version: string; dataDirectory: string }>;
       dbAction: (table: string, action: string, args: any[]) => Promise<any>;
+      factoryReset: (setCount: number) => Promise<{ success: boolean; error?: string }>;
+      getDbStatus: () => Promise<{ success: boolean; error: string | null }>;
     };
   }
 }

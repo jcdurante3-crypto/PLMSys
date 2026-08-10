@@ -117,6 +117,19 @@ export default function App() {
   };
 
   useEffect(() => {
+    const checkDbStatus = async () => {
+      if (window.electronAPI && window.electronAPI.getDbStatus) {
+        try {
+          const res = await window.electronAPI.getDbStatus();
+          if (!res.success && res.error) {
+            alert('DATABASE RESTORATION WARNING:\n\n' + res.error);
+          }
+        } catch (e) {
+          console.error('Failed to get database status:', e);
+        }
+      }
+    };
+    checkDbStatus();
     loadData();
   }, []);
 

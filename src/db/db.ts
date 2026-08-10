@@ -99,12 +99,32 @@ export async function seedDatabase(setCount: number = 2, force: boolean = false)
   isSeeding = true;
   
   try {
+    if (typeof window !== 'undefined' && (window as any).electronAPI) {
+      if (force) {
+        const res = await (window as any).electronAPI.factoryReset(setCount);
+        if (!res.success) {
+          throw new Error(res.error || 'Failed to factory reset database');
+        }
+        return;
+      } else {
+        const existingSetsCount = await db.sets.count();
+        const existingPersonnelCount = await db.personnel.count();
+        if (existingSetsCount > 0 || existingPersonnelCount > 0) {
+          return;
+        }
+        const res = await (window as any).electronAPI.factoryReset(setCount);
+        if (!res.success) {
+          throw new Error(res.error || 'Failed to initialize database');
+        }
+        return;
+      }
+    }
+
     const existingSetsCount = await db.sets.count();
     const existingPersonnelCount = await db.personnel.count();
     
     // If not forcing, check if database is already initialized. If so, return immediately.
     if (!force && (existingSetsCount > 0 || existingPersonnelCount > 0)) {
-      isSeeding = false;
       return;
     }
 

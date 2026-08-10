@@ -8,6 +8,8 @@ export interface ElectronAPI {
   writeLog: (level: string, message: string) => Promise<void>;
   getAppInfo: () => Promise<{ isPackaged: boolean; version: string; dataDirectory: string }>;
   dbAction: (table: string, action: string, args: any[]) => Promise<any>;
+  factoryReset: (setCount: number) => Promise<{ success: boolean; error?: string }>;
+  getDbStatus: () => Promise<{ success: boolean; error: string | null }>;
 }
 
 const electronAPI: ElectronAPI = {
@@ -18,6 +20,8 @@ const electronAPI: ElectronAPI = {
   writeLog: (level, message) => ipcRenderer.invoke('write-log', level, message),
   getAppInfo: () => ipcRenderer.invoke('get-app-info'),
   dbAction: (table, action, args) => ipcRenderer.invoke('db-action', { table, action, args }),
+  factoryReset: (setCount) => ipcRenderer.invoke('factory-reset', { setCount }),
+  getDbStatus: () => ipcRenderer.invoke('get-db-status'),
 };
 
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);
