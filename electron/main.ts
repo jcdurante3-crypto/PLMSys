@@ -174,6 +174,76 @@ function createFactoryDefaultDb(setCount: number = 2) {
   return defaultDb;
 }
 
+// Shared Database Validator (Requirement 3)
+function validateDb(parsed: any): boolean {
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return false;
+  }
+  for (const table of ALLOWED_TABLES) {
+    if (!parsed[table] || !Array.isArray(parsed[table])) {
+      return false;
+    }
+  }
+  return true;
+}
+
+// Search for the newest valid local backup (Requirement 4 & 6)
+function findNewestValidBackup(): string | null {
+  const candidates: string[] = [];
+  
+  // 1. Check direct .good.bak file first (the most up-to-date automatic backup)
+  const goodBakPath = dbFilePath + '.good.bak';
+  if (fs.existsSync(goodBakPath)) {
+    candidates.push(goodBakPath);
+  }
+  
+  // 2. Scan backups folder for other .json backups
+  try {
+    if (fs.existsSync(dirs.backups)) {
+      const files = fs.readdirSync(dirs.backups);
+      for (const file of files) {
+        if (file.endsWith('.json')) {
+          candidates.push(path.join(dirs.backups, file));
+        }
+      }
+    }
+  } catch (err) {
+    logToFile('error', `Failed to read backups directory: ${err}`);
+  }
+  
+  if (candidates.length === 0) {
+    return null;
+  }
+  
+  // Sort candidates by modification time descending so we get the newest first
+  const sortedCandidates = candidates
+    .map(filePath => {
+      try {
+        const stats = fs.statSync(filePath);
+        return { filePath, mtime: stats.mtimeMs };
+      } catch (e) {
+        return { filePath, mtime: 0 };
+      }
+    })
+    .sort((a, b) => b.mtime - a.mtime);
+    
+  // Find the first candidate that passes our shared validation function
+  for (const candidate of sortedCandidates) {
+    try {
+      const data = fs.readFileSync(candidate.filePath, 'utf8');
+      const parsed = JSON.parse(data);
+      if (validateDb(parsed)) {
+        logToFile('info', `Found valid backup candidate: ${candidate.filePath}`);
+        return candidate.filePath;
+      }
+    } catch (e) {
+      logToFile('warn', `Backup candidate ${candidate.filePath} failed parsing/validation: ${e}`);
+    }
+  }
+  
+  return null;
+}
+
 function initDbFile() {
   if (!fs.existsSync(dbFilePath)) {
     logToFile('info', 'Database file does not exist. Creating initial factory database...');
@@ -218,59 +288,49 @@ function readDb() {
       parseErrorMsg = parseErr.message;
     }
 
-    // Verify all expected collections exist as arrays
-    let isInvalid = false;
-    if (!parseFailed) {
-      for (const table of ALLOWED_TABLES) {
-        if (!parsed || !Array.isArray(parsed[table])) {
-          isInvalid = true;
-          break;
-        }
-      }
-    }
-
-    if (parseFailed || isInvalid) {
+    if (parseFailed || !validateDb(parsed)) {
       const reason = parseFailed 
         ? `Database JSON parsing failed: ${parseErrorMsg}`
         : 'Database validation failed: Expected collections are missing or invalid.';
       logToFile('error', `${reason} Attempting recovery from latest good backup...`);
       
-      const backupCopyPath = dbFilePath + '.good.bak';
-      if (fs.existsSync(backupCopyPath)) {
+      const backupPath = findNewestValidBackup();
+      if (backupPath) {
         try {
-          const backupData = fs.readFileSync(backupCopyPath, 'utf8');
-          const backupParsed = JSON.parse(backupData);
+          // Preserve the corrupted file first
+          handleCorruptDbFile();
           
-          // Verify backup is valid
-          let backupInvalid = false;
-          for (const table of ALLOWED_TABLES) {
-            if (!backupParsed || !Array.isArray(backupParsed[table])) {
-              backupInvalid = true;
-              break;
-            }
-          }
+          // Copy backup to dbFilePath
+          fs.copyFileSync(backupPath, dbFilePath);
+          logToFile('info', `Database successfully auto-recovered and restored from: ${backupPath}`);
           
-          if (!backupInvalid) {
-            // Preserve the corrupted file first
-            handleCorruptDbFile();
-            // Copy backup to dbFilePath
-            fs.copyFileSync(backupCopyPath, dbFilePath);
-            logToFile('info', 'Database successfully auto-recovered and restored from latest known-good backup.');
-            return backupParsed;
+          // Verify the restored database file physically on disk
+          const restoredContent = fs.readFileSync(dbFilePath, 'utf8');
+          const restoredParsed = JSON.parse(restoredContent);
+          if (validateDb(restoredParsed)) {
+            dbErrorStatus = null; // Reset error status on successful recovery
+            return restoredParsed;
+          } else {
+            throw new Error('Restored database from backup failed validation on physical verification.');
           }
-        } catch (backupRecoveryErr) {
-          logToFile('error', `Failed to restore from backup during auto-recovery: ${backupRecoveryErr}`);
+        } catch (backupRecoveryErr: any) {
+          logToFile('error', `Failed to restore/verify backup during auto-recovery: ${backupRecoveryErr.message}`);
         }
       }
       
       // If we reach here, we could not auto-recover
       handleCorruptDbFile();
-      throw new Error(`Database file is corrupt/invalid, and no valid backup was available for auto-recovery. Your corrupted data has been preserved. Details: ${reason}`);
+      const errText = `Database file is corrupt/invalid, and no valid backup was available for auto-recovery. Your corrupted data has been preserved. Details: ${reason}`;
+      dbErrorStatus = errText;
+      throw new Error(errText);
     }
 
+    dbErrorStatus = null; // Healthy
     return parsed;
-  } catch (err) {
-    logToFile('error', `Failed to read database: ${err}`);
+  } catch (err: any) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    logToFile('error', `Failed to read database: ${errMsg}`);
+    dbErrorStatus = `Database read failed: ${errMsg}`;
     throw err; // Crucial: throw/report error, DO NOT silently swallow and return empty DB!
   }
 }
@@ -280,11 +340,14 @@ let isQuitting = false;
 
 function writeDb(data: any, table?: string, action?: string, args?: any[]) {
   pendingWritesCount++;
+  const tempFilePath = dbFilePath + '.tmp';
+  const backupFilePath = dbFilePath + '.bak';
+  let backupCreated = false;
+
   try {
     logToFile('info', `DB WRITE START - table: ${table || 'N/A'}, action: ${action || 'N/A'}, database path: ${dbFilePath}`);
     
     // 1. Write plmsys.json.tmp
-    const tempFilePath = dbFilePath + '.tmp';
     fs.writeFileSync(tempFilePath, JSON.stringify(data, null, 2), 'utf8');
     
     // 2. Verify the temporary JSON before touching anything else
@@ -299,11 +362,9 @@ function writeDb(data: any, table?: string, action?: string, args?: any[]) {
       throw new Error(`Verification failed: Parsed JSON from temporary file is invalid: ${parseErr.message || parseErr}`);
     }
 
-    // Verify all expected tables exist in temp data
-    for (const allowedTable of ALLOWED_TABLES) {
-      if (!tempVerifiedData[allowedTable] || !Array.isArray(tempVerifiedData[allowedTable])) {
-        throw new Error(`Verification failed: Table "${allowedTable}" is missing or invalid in temporary database.`);
-      }
+    // Verify all expected tables exist and are arrays using the shared database validator
+    if (!validateDb(tempVerifiedData)) {
+      throw new Error(`Verification failed: Temporary database validation failed.`);
     }
 
     // If specific action details are requested, verify they exist in the temp data first
@@ -353,49 +414,19 @@ function writeDb(data: any, table?: string, action?: string, args?: any[]) {
       }
     }
 
-    // 3. Safely replace the production database (using rename)
-    const backupFilePath = dbFilePath + '.bak';
-    let backupCreated = false;
-    
-    try {
-      if (fs.existsSync(dbFilePath)) {
-        if (fs.existsSync(backupFilePath)) {
-          fs.unlinkSync(backupFilePath);
-        }
-        // Move current file to backup
-        fs.renameSync(dbFilePath, backupFilePath);
-        backupCreated = true;
+    // 3. Move current file to backup (.bak) first
+    if (fs.existsSync(dbFilePath)) {
+      if (fs.existsSync(backupFilePath)) {
+        fs.unlinkSync(backupFilePath);
       }
-      
-      // Move temp file to current file path
-      fs.renameSync(tempFilePath, dbFilePath);
-    } catch (renameErr) {
-      logToFile('error', `Atomic rename/replace failed, attempting backup recovery: ${renameErr}`);
-      
-      // Restore the backup if we successfully renamed it
-      if (backupCreated && fs.existsSync(backupFilePath)) {
-        try {
-          if (fs.existsSync(dbFilePath)) {
-            fs.unlinkSync(dbFilePath);
-          }
-          fs.renameSync(backupFilePath, dbFilePath);
-          logToFile('info', 'Successfully restored database from backup after rename failure.');
-        } catch (restoreErr) {
-          logToFile('critical', `Failed to restore database from backup: ${restoreErr}`);
-        }
-      }
-      
-      // Clean up temp file if still exists
-      try {
-        if (fs.existsSync(tempFilePath)) {
-          fs.unlinkSync(tempFilePath);
-        }
-      } catch (cleanErr) {}
-      
-      throw renameErr; // Propagate rename error
+      fs.renameSync(dbFilePath, backupFilePath);
+      backupCreated = true;
     }
 
-    // 4. Verify final plmsys.json physically on disk
+    // 4. Move temp file to current file path
+    fs.renameSync(tempFilePath, dbFilePath);
+
+    // 5. Verify final plmsys.json physically on disk
     if (!fs.existsSync(dbFilePath)) {
       throw new Error(`Verification failed: Production database file does not exist at ${dbFilePath}`);
     }
@@ -407,11 +438,9 @@ function writeDb(data: any, table?: string, action?: string, args?: any[]) {
       throw new Error(`Verification failed: Parsed JSON from written file is invalid: ${parseErr.message || parseErr}`);
     }
 
-    // Verify all expected tables exist in the physically written file
-    for (const allowedTable of ALLOWED_TABLES) {
-      if (!verifiedData[allowedTable] || !Array.isArray(verifiedData[allowedTable])) {
-        throw new Error(`Verification failed: Table "${allowedTable}" is missing or invalid in verified database.`);
-      }
+    // Verify all expected tables exist and are arrays using the shared database validator
+    if (!validateDb(verifiedData)) {
+      throw new Error(`Verification failed: Written database validation failed.`);
     }
 
     // Double check specific changes physically on disk
@@ -461,7 +490,7 @@ function writeDb(data: any, table?: string, action?: string, args?: any[]) {
       }
     }
 
-    // 5. ONLY THEN delete the backup file since verification succeeded
+    // 6. ONLY THEN delete the backup file since verification succeeded
     if (backupCreated && fs.existsSync(backupFilePath)) {
       try {
         fs.unlinkSync(backupFilePath);
@@ -470,7 +499,7 @@ function writeDb(data: any, table?: string, action?: string, args?: any[]) {
       }
     }
 
-    // 6. Save a known-good backup copy since verification succeeded
+    // 7. Save a known-good backup copy since verification succeeded
     const goodBackupCopyPath = dbFilePath + '.good.bak';
     try {
       fs.copyFileSync(dbFilePath, goodBackupCopyPath);
@@ -483,6 +512,29 @@ function writeDb(data: any, table?: string, action?: string, args?: any[]) {
   } catch (err: any) {
     const errMsg = err instanceof Error ? err.message : String(err);
     logToFile('error', `DB WRITE FAILED - error: ${errMsg}, database path: ${dbFilePath}`);
+
+    // If ANY step fails: STOP -> restore previous valid database -> preserve original database -> throw/report error.
+    if (backupCreated && fs.existsSync(backupFilePath)) {
+      try {
+        if (fs.existsSync(dbFilePath)) {
+          const brokenPath = dbFilePath + `.failed-${Date.now()}`;
+          fs.renameSync(dbFilePath, brokenPath);
+          logToFile('warn', `Preserved failed database write at: ${brokenPath}`);
+        }
+        fs.renameSync(backupFilePath, dbFilePath);
+        logToFile('info', 'Successfully restored database from previous valid backup after write failure.');
+      } catch (restoreErr) {
+        logToFile('critical', `Failed to restore database from backup after write failure: ${restoreErr}`);
+      }
+    }
+
+    // Clean up temp file if still exists
+    try {
+      if (fs.existsSync(tempFilePath)) {
+        fs.unlinkSync(tempFilePath);
+      }
+    } catch (cleanErr) {}
+
     throw err; // Propagate error so IPC fails visible to UI
   } finally {
     pendingWritesCount--;
@@ -578,107 +630,66 @@ ipcMain.handle('get-db-status', async () => {
 
 ipcMain.handle('factory-reset', async (event, { setCount }) => {
   logToFile('info', `IPC factory-reset requested with setCount=${setCount}`);
+  
+  const safetyBackupPath = dbFilePath + '.factory-safety.bak';
+  let safetyBackupCreated = false;
+  
   try {
-    const todayStr = new Date().toISOString().split('T')[0];
-    const nowObj = new Date();
-    const mm = String(nowObj.getMonth() + 1).padStart(2, '0');
-    const dd = String(nowObj.getDate()).padStart(2, '0');
-    const yy = String(nowObj.getFullYear()).slice(-2);
-    const dateFormatted = `${mm}${dd}${yy}`;
+    // 1. Create safety backup of current database
+    if (fs.existsSync(dbFilePath)) {
+      try {
+        fs.copyFileSync(dbFilePath, safetyBackupPath);
+        safetyBackupCreated = true;
+        logToFile('info', `Factory reset safety backup created at: ${safetyBackupPath}`);
+      } catch (backupErr) {
+        logToFile('warn', `Failed to create factory reset safety backup: ${backupErr}`);
+      }
+    }
+    
+    // 2. Generate complete factory-default database in memory
+    const emptyDb = createFactoryDefaultDb(setCount);
 
-    const emptyDb: any = {
-      sets: [],
-      positions: [],
-      plates: [],
-      plateInstallations: [],
-      plateRemovals: [],
-      dailyProduction: [],
-      replacements: [],
-      jobOrders: [
-        { id: 'jo-1', jobOrderNumber: '0626-26', description: 'Heavy Production Run Q3', date: todayStr, status: 'IN_PROGRESS' },
-        { id: 'jo-2', jobOrderNumber: '0712-26', description: 'High Speed Strip Rollout', date: todayStr, status: 'OPEN' }
-      ],
-      auditLogs: [],
-      personnel: [
-        { id: 'pers-1', fullName: 'Jane Smith', shortName: 'JS', position: 'Supervisor', isAuthorized: true, password: 'password123' },
-        { id: 'pers-2', fullName: 'John Doe', shortName: 'JD', position: 'Operator', isAuthorized: false, password: '' },
-        { id: 'pers-3', fullName: 'Administrator', shortName: 'Admin', position: 'Admin', isAuthorized: true, password: 'JADB1994' }
-      ]
-    };
+    // 3. Write it through the same safe persistence mechanism (which writes to .tmp, renames, and verifies!)
+    writeDb(emptyDb, 'sets', 'clear');
 
-    if (setCount > 0) {
-      for (let i = 1; i <= setCount; i++) {
-        const setId = `set-${i}`;
-        const displayName = `SET ${i < 10 ? '0' + i : i}`;
-        const shortCode = `S${i < 10 ? '0' + i : i}`;
+    // 4. Verify it physically on disk
+    if (!fs.existsSync(dbFilePath)) {
+      throw new Error('Verification failed: Production database file does not exist after factory reset.');
+    }
+    const verifyContent = fs.readFileSync(dbFilePath, 'utf8');
+    const verifiedData = JSON.parse(verifyContent);
+    if (!validateDb(verifiedData)) {
+      throw new Error('Verification failed: Factory reset database has invalid schema on disk.');
+    }
 
-        emptyDb.sets.push({
-          id: setId,
-          setNumber: i,
-          displayName,
-          shortCode,
-          status: 'ACTIVE',
-          currentTotalCycle: 0,
-          initialCycle: 0,
-          todayProduction: 0,
-          lastProductionDate: todayStr,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        });
-
-        for (let p = 1; p <= 11; p++) {
-          const posId = `pos-${i}-${p}`;
-          const pNumStr = p < 10 ? `0${p}` : `${p}`;
-          const positionCode = `P${pNumStr}`;
-          const fullCode = `${shortCode}-${positionCode}`;
-          const plateId = `plate-${i}-${p}`;
-          const serialNumber = `${dateFormatted}-${i < 10 ? '0' + i : i}-${pNumStr}`;
-
-          emptyDb.plates.push({
-            id: plateId,
-            plateSerialNumber: serialNumber,
-            manufacturingDate: todayStr,
-            status: 'ACTIVE',
-            currentSetId: setId,
-            currentPositionId: posId,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
-          });
-
-          emptyDb.positions.push({
-            id: posId,
-            setId,
-            setNumber: i,
-            positionNumber: p,
-            positionCode,
-            fullCode,
-            status: 'OCCUPIED',
-            currentPlateId: plateId,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
-          });
-
-          emptyDb.plateInstallations.push({
-            id: `inst-${i}-${p}`,
-            plateId,
-            setId,
-            positionId: posId,
-            installationDate: todayStr,
-            installationCycle: 0,
-            operatorId: 'Admin',
-            remarks: 'Factory Initial Setup',
-            createdAt: new Date().toISOString()
-          });
-        }
+    // 5. Only then delete the safety backup since verification succeeded
+    if (safetyBackupCreated && fs.existsSync(safetyBackupPath)) {
+      try {
+        fs.unlinkSync(safetyBackupPath);
+      } catch (unlinkErr) {
+        logToFile('warn', `Failed to delete factory reset safety backup: ${unlinkErr}`);
       }
     }
 
-    writeDb(emptyDb);
     logToFile('info', 'Database successfully reset to factory defaults.');
     return { success: true };
-  } catch (err) {
+  } catch (err: any) {
     const errMsg = err instanceof Error ? err.message : String(err);
-    logToFile('error', `Failed to execute factory-reset IPC: ${errMsg}`);
+    logToFile('error', `Failed to execute factory-reset IPC: ${errMsg}. Attempting restore of previous database...`);
+    
+    // 6. If Factory Reset fails: restore previous database and report failure
+    if (safetyBackupCreated && fs.existsSync(safetyBackupPath)) {
+      try {
+        if (fs.existsSync(dbFilePath)) {
+          fs.unlinkSync(dbFilePath);
+        }
+        fs.renameSync(safetyBackupPath, dbFilePath);
+        logToFile('info', 'Successfully restored previous database from safety backup after factory reset failure.');
+      } catch (restoreErr) {
+        logToFile('critical', `Failed to restore previous database from safety backup: ${restoreErr}`);
+      }
+    }
+    
     return { success: false, error: errMsg };
   }
 });
@@ -854,11 +865,11 @@ ipcMain.handle('load-backup', async () => {
     const filePath = filePaths[0];
     const data = await fs.promises.readFile(filePath, 'utf8');
     
-    // Quick validation
+    // Validate backup using the shared database validator
     const parsed = JSON.parse(data);
-    if (!parsed.sets || !parsed.positions) {
+    if (!validateDb(parsed)) {
       logToFile('error', `Backup validation failed for file: ${filePath}`);
-      return { success: false, error: 'Invalid backup format: Missing required collections.' };
+      return { success: false, error: 'Invalid backup format: Every required table must exist and be an array.' };
     }
 
     logToFile('info', `Backup file loaded and validated successfully: ${filePath}`);
