@@ -163,6 +163,7 @@ declare global {
       loadBackup: () => Promise<{ success: boolean; data?: string; cancelled?: boolean; error?: string }>;
       writeLog: (level: string, message: string) => Promise<void>;
       getAppInfo: () => Promise<{ isPackaged: boolean; version: string; dataDirectory: string }>;
+      dbAction: (table: string, action: string, args: any[]) => Promise<any>;
     };
   }
 }

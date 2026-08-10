@@ -43,6 +43,46 @@ export class PlateDatabase extends Dexie {
 
 export const db = new PlateDatabase();
 
+// IPC-based database proxy for physical portable database file in Electron
+if (typeof window !== 'undefined' && (window as any).electronAPI) {
+  const tableNames = [
+    'sets',
+    'positions',
+    'plates',
+    'plateInstallations',
+    'plateRemovals',
+    'dailyProduction',
+    'replacements',
+    'jobOrders',
+    'auditLogs',
+    'personnel'
+  ];
+
+  tableNames.forEach((tableName) => {
+    const proxyTable = {
+      toArray: () => (window as any).electronAPI.dbAction(tableName, 'toArray', []),
+      get: (id: any) => (window as any).electronAPI.dbAction(tableName, 'get', [id]),
+      put: (item: any) => (window as any).electronAPI.dbAction(tableName, 'put', [item]),
+      add: (item: any) => (window as any).electronAPI.dbAction(tableName, 'add', [item]),
+      update: (id: any, changes: any) => (window as any).electronAPI.dbAction(tableName, 'update', [id, changes]),
+      delete: (id: any) => (window as any).electronAPI.dbAction(tableName, 'delete', [id]),
+      clear: () => (window as any).electronAPI.dbAction(tableName, 'clear', []),
+      bulkPut: (items: any) => (window as any).electronAPI.dbAction(tableName, 'bulkPut', [items]),
+      count: () => (window as any).electronAPI.dbAction(tableName, 'count', [])
+    };
+    Object.defineProperty(db, tableName, {
+      get: () => proxyTable,
+      configurable: true,
+      enumerable: true
+    });
+  });
+
+  // Proxy Dexie transaction so it directly executes the callback function
+  (db as any).transaction = (mode: any, tables: any, callback: any) => {
+    return callback();
+  };
+}
+
 // Helper to generate UUID v4
 export function generateUUID(): string {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {

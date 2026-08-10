@@ -46,6 +46,46 @@ logToFile('info', 'Application main process starting...');
 logToFile('info', `Packaged: ${app.isPackaged}`);
 logToFile('info', `Data folder set to: ${dataDirectory}`);
 
+// Portable JSON Database Helpers
+const dbFilePath = path.join(dirs.database, 'plmsys.json');
+
+function initDbFile() {
+  if (!fs.existsSync(dbFilePath)) {
+    const emptyDb = {
+      sets: [],
+      positions: [],
+      plates: [],
+      plateInstallations: [],
+      plateRemovals: [],
+      dailyProduction: [],
+      replacements: [],
+      jobOrders: [],
+      auditLogs: [],
+      personnel: []
+    };
+    fs.writeFileSync(dbFilePath, JSON.stringify(emptyDb, null, 2), 'utf8');
+  }
+}
+
+function readDb() {
+  try {
+    initDbFile();
+    const data = fs.readFileSync(dbFilePath, 'utf8');
+    return JSON.parse(data);
+  } catch (err) {
+    logToFile('error', `Failed to read database: ${err}`);
+    return {};
+  }
+}
+
+function writeDb(data: any) {
+  try {
+    fs.writeFileSync(dbFilePath, JSON.stringify(data, null, 2), 'utf8');
+  } catch (err) {
+    logToFile('error', `Failed to write database: ${err}`);
+  }
+}
+
 function createWindow() {
   const appPath = app.getAppPath();
   const preloadPath = path.isAbsolute(path.join(__dirname, 'preload.cjs'))
@@ -73,6 +113,97 @@ function createWindow() {
 }
 
 // IPC Handlers
+ipcMain.handle('db-action', async (event, { table, action, args }) => {
+  const dbData = readDb();
+  if (!dbData[table]) {
+    dbData[table] = [];
+  }
+
+  const collection = dbData[table];
+
+  switch (action) {
+    case 'toArray':
+      return collection;
+
+    case 'get': {
+      const id = args[0];
+      return collection.find((item: any) => item.id === id) || null;
+    }
+
+    case 'put': {
+      const item = args[0];
+      const index = collection.findIndex((x: any) => x.id === item.id);
+      if (index !== -1) {
+        collection[index] = { ...collection[index], ...item };
+      } else {
+        collection.push(item);
+      }
+      writeDb(dbData);
+      return item.id;
+    }
+
+    case 'add': {
+      const item = args[0];
+      const index = collection.findIndex((x: any) => x.id === item.id);
+      if (index !== -1) {
+        throw new Error(`Key ${item.id} already exists`);
+      } else {
+        collection.push(item);
+      }
+      writeDb(dbData);
+      return item.id;
+    }
+
+    case 'update': {
+      const id = args[0];
+      const changes = args[1];
+      const index = collection.findIndex((x: any) => x.id === id);
+      if (index !== -1) {
+        collection[index] = { ...collection[index], ...changes };
+        writeDb(dbData);
+        return 1;
+      }
+      return 0;
+    }
+
+    case 'delete': {
+      const id = args[0];
+      const initialLength = collection.length;
+      dbData[table] = collection.filter((x: any) => x.id !== id);
+      if (dbData[table].length !== initialLength) {
+        writeDb(dbData);
+        return 1;
+      }
+      return 0;
+    }
+
+    case 'clear':
+      dbData[table] = [];
+      writeDb(dbData);
+      return;
+
+    case 'bulkPut': {
+      const items = args[0];
+      items.forEach((item: any) => {
+        const index = collection.findIndex((x: any) => x.id === item.id);
+        if (index !== -1) {
+          collection[index] = { ...collection[index], ...item };
+        } else {
+          collection.push(item);
+        }
+      });
+      writeDb(dbData);
+      return;
+    }
+
+    case 'count':
+      return collection.length;
+
+    default:
+      throw new Error(`Unsupported action: ${action}`);
+  }
+});
+
 ipcMain.handle('open-data-folder', async () => {
   logToFile('info', 'IPC open-data-folder called');
   try {
