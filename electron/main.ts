@@ -177,10 +177,12 @@ function createFactoryDefaultDb(setCount: number = 2) {
 // Shared Database Validator (Requirement 3)
 function validateDb(parsed: any): boolean {
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    logToFile('error', 'DATABASE VALIDATION FAILURE - database root must be an object');
     return false;
   }
   for (const table of ALLOWED_TABLES) {
     if (!parsed[table] || !Array.isArray(parsed[table])) {
+      logToFile('error', `DATABASE VALIDATION FAILURE - table "${table}" is missing or is not an array`);
       return false;
     }
   }
@@ -278,6 +280,7 @@ function readDb() {
   try {
     initDbFile();
     const data = fs.readFileSync(dbFilePath, 'utf8');
+    logToFile('info', 'DATABASE OPEN');
     let parsed: any;
     let parseFailed = false;
     let parseErrorMsg = '';
@@ -291,8 +294,10 @@ function readDb() {
     if (parseFailed || !validateDb(parsed)) {
       const reason = parseFailed 
         ? `Database JSON parsing failed: ${parseErrorMsg}`
-        : 'Database validation failed: Expected collections are missing or invalid.';
+        : 'DATABASE SCHEMA INVALID: Required tables are missing or invalid.';
+      
       logToFile('error', `${reason} Attempting recovery from latest good backup...`);
+      logToFile('info', 'DATABASE RECOVERY START');
       
       const backupPath = findNewestValidBackup();
       if (backupPath) {
@@ -309,18 +314,22 @@ function readDb() {
           const restoredParsed = JSON.parse(restoredContent);
           if (validateDb(restoredParsed)) {
             dbErrorStatus = null; // Reset error status on successful recovery
+            logToFile('info', 'DATABASE RECOVERY SUCCESS');
             return restoredParsed;
           } else {
             throw new Error('Restored database from backup failed validation on physical verification.');
           }
         } catch (backupRecoveryErr: any) {
           logToFile('error', `Failed to restore/verify backup during auto-recovery: ${backupRecoveryErr.message}`);
+          logToFile('error', 'DATABASE RECOVERY FAILURE');
         }
+      } else {
+        logToFile('error', 'DATABASE RECOVERY FAILURE - No valid backup candidates found.');
       }
       
       // If we reach here, we could not auto-recover
       handleCorruptDbFile();
-      const errText = `Database file is corrupt/invalid, and no valid backup was available for auto-recovery. Your corrupted data has been preserved. Details: ${reason}`;
+      const errText = `DATABASE SCHEMA INVALID: Database file is corrupt/invalid, and no valid backup was available for auto-recovery. Your corrupted data has been preserved. Details: ${reason}`;
       dbErrorStatus = errText;
       throw new Error(errText);
     }
@@ -345,6 +354,7 @@ function writeDb(data: any, table?: string, action?: string, args?: any[]) {
   let backupCreated = false;
 
   try {
+    logToFile('info', 'DATABASE WRITE START');
     logToFile('info', `DB WRITE START - table: ${table || 'N/A'}, action: ${action || 'N/A'}, database path: ${dbFilePath}`);
     
     // 1. Write plmsys.json.tmp
@@ -509,8 +519,10 @@ function writeDb(data: any, table?: string, action?: string, args?: any[]) {
 
     const stats = fs.statSync(dbFilePath);
     logToFile('info', `DB WRITE SUCCESS - database path: ${dbFilePath}, file size: ${stats.size} bytes`);
+    logToFile('info', 'DATABASE WRITE SUCCESS');
   } catch (err: any) {
     const errMsg = err instanceof Error ? err.message : String(err);
+    logToFile('error', `DATABASE WRITE FAILURE - ${errMsg}`);
     logToFile('error', `DB WRITE FAILED - error: ${errMsg}, database path: ${dbFilePath}`);
 
     // If ANY step fails: STOP -> restore previous valid database -> preserve original database -> throw/report error.
@@ -523,8 +535,16 @@ function writeDb(data: any, table?: string, action?: string, args?: any[]) {
         }
         fs.renameSync(backupFilePath, dbFilePath);
         logToFile('info', 'Successfully restored database from previous valid backup after write failure.');
-      } catch (restoreErr) {
-        logToFile('critical', `Failed to restore database from backup after write failure: ${restoreErr}`);
+        
+        // Verify restored database
+        const restoredContent = fs.readFileSync(dbFilePath, 'utf8');
+        const restoredParsed = JSON.parse(restoredContent);
+        if (!validateDb(restoredParsed)) {
+          throw new Error('Restored database from backup failed validation on write rollback.');
+        }
+        logToFile('info', 'Rollback database restoration verified successfully.');
+      } catch (restoreErr: any) {
+        logToFile('critical', `Failed to restore/verify database from backup after write failure: ${restoreErr.message}`);
       }
     }
 
@@ -596,16 +616,10 @@ ipcMain.handle('get-db-status', async () => {
       const parsed = JSON.parse(data);
       validJson = true;
 
-      let missingTables: string[] = [];
-      for (const table of ALLOWED_TABLES) {
-        if (!parsed || !Array.isArray(parsed[table])) {
-          missingTables.push(table);
-        }
-      }
-      if (missingTables.length === 0) {
+      if (validateDb(parsed)) {
         schemaValid = true;
       } else {
-        readError = `Missing or invalid tables: ${missingTables.join(', ')}`;
+        readError = 'DATABASE SCHEMA INVALID: Required tables are missing or invalid.';
       }
     } catch (err: any) {
       readError = err instanceof Error ? err.message : String(err);
@@ -614,21 +628,26 @@ ipcMain.handle('get-db-status', async () => {
     readError = 'Database file does not exist on disk.';
   }
 
+  const isHealthy = dbErrorStatus === null && schemaValid;
   return {
-    success: dbErrorStatus === null && schemaValid,
+    status: isHealthy ? 'healthy' : 'error',
+    success: isHealthy,
     error: dbErrorStatus || readError,
+    recoveryStatus: dbErrorStatus ? 'recovered/error' : 'normal',
     details: {
       path: dbFilePath,
       exists,
       size,
       readable,
       valid: validJson,
-      schemaValid
+      schemaValid,
+      lastError: dbErrorStatus || readError
     }
   };
 });
 
 ipcMain.handle('factory-reset', async (event, { setCount }) => {
+  logToFile('info', 'FACTORY RESET START');
   logToFile('info', `IPC factory-reset requested with setCount=${setCount}`);
   
   const safetyBackupPath = dbFilePath + '.factory-safety.bak';
@@ -650,7 +669,7 @@ ipcMain.handle('factory-reset', async (event, { setCount }) => {
     const emptyDb = createFactoryDefaultDb(setCount);
 
     // 3. Write it through the same safe persistence mechanism (which writes to .tmp, renames, and verifies!)
-    writeDb(emptyDb, 'sets', 'clear');
+    writeDb(emptyDb);
 
     // 4. Verify it physically on disk
     if (!fs.existsSync(dbFilePath)) {
@@ -671,10 +690,12 @@ ipcMain.handle('factory-reset', async (event, { setCount }) => {
       }
     }
 
+    logToFile('info', 'FACTORY RESET SUCCESS');
     logToFile('info', 'Database successfully reset to factory defaults.');
     return { success: true };
   } catch (err: any) {
     const errMsg = err instanceof Error ? err.message : String(err);
+    logToFile('error', `FACTORY RESET FAILURE - ${errMsg}`);
     logToFile('error', `Failed to execute factory-reset IPC: ${errMsg}. Attempting restore of previous database...`);
     
     // 6. If Factory Reset fails: restore previous database and report failure
@@ -684,9 +705,16 @@ ipcMain.handle('factory-reset', async (event, { setCount }) => {
           fs.unlinkSync(dbFilePath);
         }
         fs.renameSync(safetyBackupPath, dbFilePath);
-        logToFile('info', 'Successfully restored previous database from safety backup after factory reset failure.');
-      } catch (restoreErr) {
-        logToFile('critical', `Failed to restore previous database from safety backup: ${restoreErr}`);
+        
+        // Verify restoration
+        const restoredContent = fs.readFileSync(dbFilePath, 'utf8');
+        const restoredParsed = JSON.parse(restoredContent);
+        if (!validateDb(restoredParsed)) {
+          throw new Error('Factory reset recovery restoration failed validation.');
+        }
+        logToFile('info', 'Successfully restored and verified previous database from safety backup after factory reset failure.');
+      } catch (restoreErr: any) {
+        logToFile('critical', `Failed to restore/verify previous database from safety backup: ${restoreErr.message}`);
       }
     }
     
