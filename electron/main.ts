@@ -75,21 +75,110 @@ const ALLOWED_ACTIONS = new Set([
   'count'
 ]);
 
+function createFactoryDefaultDb(setCount: number = 2) {
+  const todayStr = new Date().toISOString().split('T')[0];
+  const nowObj = new Date();
+  const mm = String(nowObj.getMonth() + 1).padStart(2, '0');
+  const dd = String(nowObj.getDate()).padStart(2, '0');
+  const yy = String(nowObj.getFullYear()).slice(-2);
+  const dateFormatted = `${mm}${dd}${yy}`;
+
+  const defaultDb: any = {
+    sets: [],
+    positions: [],
+    plates: [],
+    plateInstallations: [],
+    plateRemovals: [],
+    dailyProduction: [],
+    replacements: [],
+    jobOrders: [
+      { id: 'jo-1', jobOrderNumber: '0626-26', description: 'Heavy Production Run Q3', date: todayStr, status: 'IN_PROGRESS' },
+      { id: 'jo-2', jobOrderNumber: '0712-26', description: 'High Speed Strip Rollout', date: todayStr, status: 'OPEN' }
+    ],
+    auditLogs: [],
+    personnel: [
+      { id: 'pers-1', fullName: 'Jane Smith', shortName: 'JS', position: 'Supervisor', isAuthorized: true, password: 'password123' },
+      { id: 'pers-2', fullName: 'John Doe', shortName: 'JD', position: 'Operator', isAuthorized: false, password: '' },
+      { id: 'pers-3', fullName: 'Administrator', shortName: 'Admin', position: 'Admin', isAuthorized: true, password: 'JADB1994' }
+    ]
+  };
+
+  if (setCount > 0) {
+    for (let i = 1; i <= setCount; i++) {
+      const setId = `set-${i}`;
+      const displayName = `SET ${i < 10 ? '0' + i : i}`;
+      const shortCode = `S${i < 10 ? '0' + i : i}`;
+
+      defaultDb.sets.push({
+        id: setId,
+        setNumber: i,
+        displayName,
+        shortCode,
+        status: 'ACTIVE',
+        currentTotalCycle: 0,
+        initialCycle: 0,
+        todayProduction: 0,
+        lastProductionDate: todayStr,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+
+      for (let p = 1; p <= 11; p++) {
+        const posId = `pos-${i}-${p}`;
+        const pNumStr = p < 10 ? `0${p}` : `${p}`;
+        const positionCode = `P${pNumStr}`;
+        const fullCode = `${shortCode}-${positionCode}`;
+        const plateId = `plate-${i}-${p}`;
+        const serialNumber = `${dateFormatted}-${i < 10 ? '0' + i : i}-${pNumStr}`;
+
+        defaultDb.plates.push({
+          id: plateId,
+          plateSerialNumber: serialNumber,
+          manufacturingDate: todayStr,
+          status: 'ACTIVE',
+          currentSetId: setId,
+          currentPositionId: posId,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        });
+
+        defaultDb.positions.push({
+          id: posId,
+          setId,
+          setNumber: i,
+          positionNumber: p,
+          positionCode,
+          fullCode,
+          status: 'OCCUPIED',
+          currentPlateId: plateId,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        });
+
+        defaultDb.plateInstallations.push({
+          id: `inst-${i}-${p}`,
+          plateId,
+          setId,
+          positionId: posId,
+          installationDate: todayStr,
+          installationCycle: 0,
+          operatorId: 'Admin',
+          remarks: 'Factory Initial Setup',
+          createdAt: new Date().toISOString()
+        });
+      }
+    }
+  }
+  return defaultDb;
+}
+
 function initDbFile() {
   if (!fs.existsSync(dbFilePath)) {
-    const emptyDb = {
-      sets: [],
-      positions: [],
-      plates: [],
-      plateInstallations: [],
-      plateRemovals: [],
-      dailyProduction: [],
-      replacements: [],
-      jobOrders: [],
-      auditLogs: [],
-      personnel: []
-    };
-    fs.writeFileSync(dbFilePath, JSON.stringify(emptyDb, null, 2), 'utf8');
+    logToFile('info', 'Database file does not exist. Creating initial factory database...');
+    const defaultDb = createFactoryDefaultDb(2);
+    const tempFilePath = dbFilePath + '.tmp';
+    fs.writeFileSync(tempFilePath, JSON.stringify(defaultDb, null, 2), 'utf8');
+    fs.renameSync(tempFilePath, dbFilePath);
   }
 }
 
@@ -113,11 +202,10 @@ function readDb() {
     let parsed: any;
     try {
       parsed = JSON.parse(data);
-    } catch (parseErr) {
+    } catch (parseErr: any) {
       logToFile('error', `Database JSON parsing failed. File is corrupt: ${parseErr}`);
       handleCorruptDbFile();
-      initDbFile();
-      return readDb();
+      throw new Error(`Database JSON parsing failed. File was corrupt and was backed up. Error: ${parseErr.message}`);
     }
 
     // Verify all expected collections exist as arrays
@@ -132,28 +220,119 @@ function readDb() {
     if (isInvalid) {
       logToFile('error', 'Database validation failed: Expected collections are missing or invalid.');
       handleCorruptDbFile();
-      initDbFile();
-      return readDb();
+      throw new Error(`Database format is invalid. Required collections are missing.`);
     }
 
     return parsed;
   } catch (err) {
     logToFile('error', `Failed to read database: ${err}`);
-    return {};
+    throw err; // Crucial: throw/report error, DO NOT silently swallow and return empty DB!
   }
 }
 
 let pendingWritesCount = 0;
 let isQuitting = false;
 
-function writeDb(data: any) {
+function writeDb(data: any, table?: string, action?: string, args?: any[]) {
   pendingWritesCount++;
   try {
+    logToFile('info', `DB WRITE START - table: ${table || 'N/A'}, action: ${action || 'N/A'}, database path: ${dbFilePath}`);
+    
     const tempFilePath = dbFilePath + '.tmp';
     fs.writeFileSync(tempFilePath, JSON.stringify(data, null, 2), 'utf8');
-    fs.renameSync(tempFilePath, dbFilePath);
-  } catch (err) {
-    logToFile('error', `Failed to write database atomically: ${err}`);
+    
+    // Windows-safe write/rename sequence with backups
+    try {
+      if (fs.existsSync(dbFilePath)) {
+        const backupFilePath = dbFilePath + '.bak';
+        if (fs.existsSync(backupFilePath)) {
+          fs.unlinkSync(backupFilePath);
+        }
+        fs.renameSync(dbFilePath, backupFilePath);
+        fs.renameSync(tempFilePath, dbFilePath);
+        fs.unlinkSync(backupFilePath);
+      } else {
+        fs.renameSync(tempFilePath, dbFilePath);
+      }
+    } catch (renameErr) {
+      logToFile('warn', `Rename/replace failed, trying direct write fallback: ${renameErr}`);
+      fs.writeFileSync(dbFilePath, JSON.stringify(data, null, 2), 'utf8');
+      try {
+        if (fs.existsSync(tempFilePath)) {
+          fs.unlinkSync(tempFilePath);
+        }
+      } catch (cleanErr) {
+        // ignore
+      }
+    }
+
+    // Verify written file immediately
+    if (!fs.existsSync(dbFilePath)) {
+      throw new Error(`Verification failed: Database file does not exist at ${dbFilePath}`);
+    }
+    const verifyContent = fs.readFileSync(dbFilePath, 'utf8');
+    let verifiedData: any;
+    try {
+      verifiedData = JSON.parse(verifyContent);
+    } catch (parseErr) {
+      throw new Error(`Verification failed: Parsed JSON from written file is invalid: ${parseErr}`);
+    }
+
+    if (table) {
+      if (!verifiedData[table] || !Array.isArray(verifiedData[table])) {
+        throw new Error(`Verification failed: Table "${table}" is missing or not an array in written database.`);
+      }
+      const collection = verifiedData[table];
+      if (action === 'put' || action === 'add') {
+        const item = args && args[0];
+        const targetId = item ? item.id : null;
+        if (targetId) {
+          const exists = collection.some((x: any) => x.id === targetId);
+          if (!exists) {
+            throw new Error(`Verification failed: Record with ID "${targetId}" was not found in table "${table}" after write.`);
+          }
+        }
+      } else if (action === 'update') {
+        const targetId = args && args[0];
+        if (targetId) {
+          const exists = collection.some((x: any) => x.id === targetId);
+          if (!exists) {
+            throw new Error(`Verification failed: Record with ID "${targetId}" was not found in table "${table}" after update.`);
+          }
+        }
+      } else if (action === 'delete') {
+        const targetId = args && args[0];
+        if (targetId) {
+          const exists = collection.some((x: any) => x.id === targetId);
+          if (exists) {
+            throw new Error(`Verification failed: Record with ID "${targetId}" should have been deleted but still exists in table "${table}".`);
+          }
+        }
+      } else if (action === 'bulkPut') {
+        const items = args && args[0];
+        if (Array.isArray(items)) {
+          for (const item of items) {
+            if (item && item.id) {
+              const exists = collection.some((x: any) => x.id === item.id);
+              if (!exists) {
+                throw new Error(`Verification failed: Bulk-put record with ID "${item.id}" was not found in table "${table}" after write.`);
+              }
+            }
+          }
+        }
+      } else if (action === 'clear') {
+        if (collection.length !== 0) {
+          throw new Error(`Verification failed: Table "${table}" was cleared but still contains ${collection.length} records.`);
+        }
+      }
+    }
+
+    const stats = fs.statSync(dbFilePath);
+    logToFile('info', `DB WRITE SUCCESS - database path: ${dbFilePath}, file size: ${stats.size} bytes`);
+  } catch (err: any) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    logToFile('error', `DB WRITE FAILED - error: ${errMsg}, database path: ${dbFilePath}`);
+    throw err; // Propagate error so IPC fails visible to UI
   } finally {
     pendingWritesCount--;
   }
@@ -345,7 +524,7 @@ ipcMain.handle('db-action', async (event, { table, action, args }) => {
       } else {
         collection.push(item);
       }
-      writeDb(dbData);
+      writeDb(dbData, table, action, args);
       return item.id;
     }
 
@@ -357,7 +536,7 @@ ipcMain.handle('db-action', async (event, { table, action, args }) => {
       } else {
         collection.push(item);
       }
-      writeDb(dbData);
+      writeDb(dbData, table, action, args);
       return item.id;
     }
 
@@ -367,7 +546,7 @@ ipcMain.handle('db-action', async (event, { table, action, args }) => {
       const index = collection.findIndex((x: any) => x.id === id);
       if (index !== -1) {
         collection[index] = { ...collection[index], ...changes };
-        writeDb(dbData);
+        writeDb(dbData, table, action, args);
         return 1;
       }
       return 0;
@@ -378,7 +557,7 @@ ipcMain.handle('db-action', async (event, { table, action, args }) => {
       const initialLength = collection.length;
       dbData[table] = collection.filter((x: any) => x.id !== id);
       if (dbData[table].length !== initialLength) {
-        writeDb(dbData);
+        writeDb(dbData, table, action, args);
         return 1;
       }
       return 0;
@@ -386,7 +565,7 @@ ipcMain.handle('db-action', async (event, { table, action, args }) => {
 
     case 'clear':
       dbData[table] = [];
-      writeDb(dbData);
+      writeDb(dbData, table, action, args);
       return;
 
     case 'bulkPut': {
@@ -399,7 +578,7 @@ ipcMain.handle('db-action', async (event, { table, action, args }) => {
           collection.push(item);
         }
       });
-      writeDb(dbData);
+      writeDb(dbData, table, action, args);
       return;
     }
 

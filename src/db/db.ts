@@ -107,25 +107,21 @@ export async function seedDatabase(setCount: number = 2, force: boolean = false)
         }
         return;
       } else {
-        const existingSetsCount = await db.sets.count();
-        const existingPersonnelCount = await db.personnel.count();
-        if (existingSetsCount > 0 || existingPersonnelCount > 0) {
-          return;
-        }
-        const res = await (window as any).electronAPI.factoryReset(setCount);
-        if (!res.success) {
-          throw new Error(res.error || 'Failed to initialize database');
-        }
+        // Normal startup inside Electron: NEVER automatically factory reset.
+        // The main process handles creating the initial factory database if the file plmsys.json did not exist.
+        // Therefore, we return immediately and DO NOT call factoryReset.
         return;
       }
     }
 
-    const existingSetsCount = await db.sets.count();
-    const existingPersonnelCount = await db.personnel.count();
-    
-    // If not forcing, check if database is already initialized. If so, return immediately.
-    if (!force && (existingSetsCount > 0 || existingPersonnelCount > 0)) {
-      return;
+    // Inside browser fallback:
+    if (!force) {
+      // For browser fallback, we use a localStorage flag to check if we've already done first-time creation.
+      const hasInitialized = localStorage.getItem('plmsys_browser_initialized');
+      if (hasInitialized) {
+        return;
+      }
+      localStorage.setItem('plmsys_browser_initialized', 'true');
     }
 
     // Always clear all tables first inside an atomic transaction to prevent IndexedDB lockups
