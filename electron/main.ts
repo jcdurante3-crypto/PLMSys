@@ -283,11 +283,77 @@ function writeDb(data: any, table?: string, action?: string, args?: any[]) {
   try {
     logToFile('info', `DB WRITE START - table: ${table || 'N/A'}, action: ${action || 'N/A'}, database path: ${dbFilePath}`);
     
-    // 1. Write to temp file first to verify it writes successfully
+    // 1. Write plmsys.json.tmp
     const tempFilePath = dbFilePath + '.tmp';
     fs.writeFileSync(tempFilePath, JSON.stringify(data, null, 2), 'utf8');
     
-    // 2. Perform the atomic, Windows-safe replacement with backup safety
+    // 2. Verify the temporary JSON before touching anything else
+    if (!fs.existsSync(tempFilePath)) {
+      throw new Error(`Verification failed: Temporary database file does not exist at ${tempFilePath}`);
+    }
+    const tempContent = fs.readFileSync(tempFilePath, 'utf8');
+    let tempVerifiedData: any;
+    try {
+      tempVerifiedData = JSON.parse(tempContent);
+    } catch (parseErr: any) {
+      throw new Error(`Verification failed: Parsed JSON from temporary file is invalid: ${parseErr.message || parseErr}`);
+    }
+
+    // Verify all expected tables exist in temp data
+    for (const allowedTable of ALLOWED_TABLES) {
+      if (!tempVerifiedData[allowedTable] || !Array.isArray(tempVerifiedData[allowedTable])) {
+        throw new Error(`Verification failed: Table "${allowedTable}" is missing or invalid in temporary database.`);
+      }
+    }
+
+    // If specific action details are requested, verify they exist in the temp data first
+    if (table) {
+      const collection = tempVerifiedData[table];
+      if (action === 'put' || action === 'add') {
+        const item = args && args[0];
+        const targetId = item ? item.id : null;
+        if (targetId) {
+          const exists = collection.some((x: any) => x.id === targetId);
+          if (!exists) {
+            throw new Error(`Verification failed: Record with ID "${targetId}" was not found in temporary table "${table}" after write.`);
+          }
+        }
+      } else if (action === 'update') {
+        const targetId = args && args[0];
+        if (targetId) {
+          const exists = collection.some((x: any) => x.id === targetId);
+          if (!exists) {
+            throw new Error(`Verification failed: Record with ID "${targetId}" was not found in temporary table "${table}" after update.`);
+          }
+        }
+      } else if (action === 'delete') {
+        const targetId = args && args[0];
+        if (targetId) {
+          const exists = collection.some((x: any) => x.id === targetId);
+          if (exists) {
+            throw new Error(`Verification failed: Record with ID "${targetId}" should have been deleted but still exists in temporary table "${table}".`);
+          }
+        }
+      } else if (action === 'bulkPut') {
+        const items = args && args[0];
+        if (Array.isArray(items)) {
+          for (const item of items) {
+            if (item && item.id) {
+              const exists = collection.some((x: any) => x.id === item.id);
+              if (!exists) {
+                throw new Error(`Verification failed: Bulk-put record with ID "${item.id}" was not found in temporary table "${table}" after write.`);
+              }
+            }
+          }
+        }
+      } else if (action === 'clear') {
+        if (collection.length !== 0) {
+          throw new Error(`Verification failed: Temporary table "${table}" was cleared but still contains ${collection.length} records.`);
+        }
+      }
+    }
+
+    // 3. Safely replace the production database (using rename)
     const backupFilePath = dbFilePath + '.bak';
     let backupCreated = false;
     
@@ -303,13 +369,8 @@ function writeDb(data: any, table?: string, action?: string, args?: any[]) {
       
       // Move temp file to current file path
       fs.renameSync(tempFilePath, dbFilePath);
-      
-      // Clean up backup now that we successfully replaced it
-      if (backupCreated && fs.existsSync(backupFilePath)) {
-        fs.unlinkSync(backupFilePath);
-      }
     } catch (renameErr) {
-      logToFile('error', `Atomic rename failed, attempting backup/fallback recovery: ${renameErr}`);
+      logToFile('error', `Atomic rename/replace failed, attempting backup recovery: ${renameErr}`);
       
       // Restore the backup if we successfully renamed it
       if (backupCreated && fs.existsSync(backupFilePath)) {
@@ -318,17 +379,9 @@ function writeDb(data: any, table?: string, action?: string, args?: any[]) {
             fs.unlinkSync(dbFilePath);
           }
           fs.renameSync(backupFilePath, dbFilePath);
-          logToFile('info', 'Successfully restored database from backup after rename failure');
+          logToFile('info', 'Successfully restored database from backup after rename failure.');
         } catch (restoreErr) {
           logToFile('critical', `Failed to restore database from backup: ${restoreErr}`);
-        }
-      } else {
-        // If no backup was created but temp file exists, try a direct write fallback
-        try {
-          fs.writeFileSync(dbFilePath, JSON.stringify(data, null, 2), 'utf8');
-          logToFile('info', 'Fallback write direct to dbFilePath succeeded');
-        } catch (writeErr) {
-          logToFile('critical', `Fallback direct write failed: ${writeErr}`);
         }
       }
       
@@ -342,26 +395,26 @@ function writeDb(data: any, table?: string, action?: string, args?: any[]) {
       throw renameErr; // Propagate rename error
     }
 
-    // 3. Verify written file immediately
+    // 4. Verify final plmsys.json physically on disk
     if (!fs.existsSync(dbFilePath)) {
-      throw new Error(`Verification failed: Database file does not exist at ${dbFilePath}`);
+      throw new Error(`Verification failed: Production database file does not exist at ${dbFilePath}`);
     }
     const verifyContent = fs.readFileSync(dbFilePath, 'utf8');
     let verifiedData: any;
     try {
       verifiedData = JSON.parse(verifyContent);
-    } catch (parseErr) {
-      throw new Error(`Verification failed: Parsed JSON from written file is invalid: ${parseErr}`);
+    } catch (parseErr: any) {
+      throw new Error(`Verification failed: Parsed JSON from written file is invalid: ${parseErr.message || parseErr}`);
     }
 
-    // Verify all expected tables exist
+    // Verify all expected tables exist in the physically written file
     for (const allowedTable of ALLOWED_TABLES) {
       if (!verifiedData[allowedTable] || !Array.isArray(verifiedData[allowedTable])) {
         throw new Error(`Verification failed: Table "${allowedTable}" is missing or invalid in verified database.`);
       }
     }
 
-    // If a specific table and action were requested, verify that change is present
+    // Double check specific changes physically on disk
     if (table) {
       const collection = verifiedData[table];
       if (action === 'put' || action === 'add') {
@@ -370,7 +423,7 @@ function writeDb(data: any, table?: string, action?: string, args?: any[]) {
         if (targetId) {
           const exists = collection.some((x: any) => x.id === targetId);
           if (!exists) {
-            throw new Error(`Verification failed: Record with ID "${targetId}" was not found in table "${table}" after write.`);
+            throw new Error(`Verification failed: Record with ID "${targetId}" not found in final table "${table}" on disk.`);
           }
         }
       } else if (action === 'update') {
@@ -378,7 +431,7 @@ function writeDb(data: any, table?: string, action?: string, args?: any[]) {
         if (targetId) {
           const exists = collection.some((x: any) => x.id === targetId);
           if (!exists) {
-            throw new Error(`Verification failed: Record with ID "${targetId}" was not found in table "${table}" after update.`);
+            throw new Error(`Verification failed: Record with ID "${targetId}" not found in final table "${table}" on disk.`);
           }
         }
       } else if (action === 'delete') {
@@ -386,7 +439,7 @@ function writeDb(data: any, table?: string, action?: string, args?: any[]) {
         if (targetId) {
           const exists = collection.some((x: any) => x.id === targetId);
           if (exists) {
-            throw new Error(`Verification failed: Record with ID "${targetId}" should have been deleted but still exists in table "${table}".`);
+            throw new Error(`Verification failed: Record with ID "${targetId}" should have been deleted from final table "${table}" on disk.`);
           }
         }
       } else if (action === 'bulkPut') {
@@ -396,19 +449,28 @@ function writeDb(data: any, table?: string, action?: string, args?: any[]) {
             if (item && item.id) {
               const exists = collection.some((x: any) => x.id === item.id);
               if (!exists) {
-                throw new Error(`Verification failed: Bulk-put record with ID "${item.id}" was not found in table "${table}" after write.`);
+                throw new Error(`Verification failed: Bulk-put record with ID "${item.id}" was not found in final table "${table}" on disk.`);
               }
             }
           }
         }
       } else if (action === 'clear') {
         if (collection.length !== 0) {
-          throw new Error(`Verification failed: Table "${table}" was cleared but still contains ${collection.length} records.`);
+          throw new Error(`Verification failed: Final table "${table}" was cleared but still contains ${collection.length} records.`);
         }
       }
     }
 
-    // 4. Save a known-good backup copy since verification succeeded
+    // 5. ONLY THEN delete the backup file since verification succeeded
+    if (backupCreated && fs.existsSync(backupFilePath)) {
+      try {
+        fs.unlinkSync(backupFilePath);
+      } catch (unlinkErr) {
+        logToFile('warn', `Failed to clean up backup file: ${unlinkErr}`);
+      }
+    }
+
+    // 6. Save a known-good backup copy since verification succeeded
     const goodBackupCopyPath = dbFilePath + '.good.bak';
     try {
       fs.copyFileSync(dbFilePath, goodBackupCopyPath);
@@ -465,9 +527,52 @@ function createWindow() {
 
 // IPC Handlers
 ipcMain.handle('get-db-status', async () => {
+  const exists = fs.existsSync(dbFilePath);
+  let size = 0;
+  let readable = false;
+  let validJson = false;
+  let schemaValid = false;
+  let readError: string | null = null;
+
+  if (exists) {
+    try {
+      const stats = fs.statSync(dbFilePath);
+      size = stats.size;
+      const data = fs.readFileSync(dbFilePath, 'utf8');
+      readable = true;
+      
+      const parsed = JSON.parse(data);
+      validJson = true;
+
+      let missingTables: string[] = [];
+      for (const table of ALLOWED_TABLES) {
+        if (!parsed || !Array.isArray(parsed[table])) {
+          missingTables.push(table);
+        }
+      }
+      if (missingTables.length === 0) {
+        schemaValid = true;
+      } else {
+        readError = `Missing or invalid tables: ${missingTables.join(', ')}`;
+      }
+    } catch (err: any) {
+      readError = err instanceof Error ? err.message : String(err);
+    }
+  } else {
+    readError = 'Database file does not exist on disk.';
+  }
+
   return {
-    success: dbErrorStatus === null,
-    error: dbErrorStatus
+    success: dbErrorStatus === null && schemaValid,
+    error: dbErrorStatus || readError,
+    details: {
+      path: dbFilePath,
+      exists,
+      size,
+      readable,
+      valid: validJson,
+      schemaValid
+    }
   };
 });
 
@@ -590,8 +695,10 @@ ipcMain.handle('db-action', async (event, { table, action, args }) => {
   }
 
   const dbData = readDb();
-  if (!dbData[table]) {
-    dbData[table] = [];
+  if (!dbData[table] || !Array.isArray(dbData[table])) {
+    const errorMsg = `Database schema invalid: table "${table}" is missing or is not an array in the persisted file.`;
+    logToFile('error', errorMsg);
+    throw new Error(errorMsg);
   }
 
   const collection = dbData[table];

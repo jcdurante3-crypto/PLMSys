@@ -77,7 +77,13 @@ if (typeof window !== 'undefined' && (window as any).electronAPI) {
     });
   });
 
-  // Proxy Dexie transaction so it directly executes the callback function
+  // IMPORTANT DEVELOPMENT NOTE (Requirement 9):
+  // This is a dummy Dexie-compatible transaction proxy to support compatibility with
+  // the existing Dexie API usage in the application without requiring a full refactor.
+  // DO NOT assume or rely on this as a real database transaction!
+  // It immediately executes the callback. There is NO database roll-back or multi-table locking.
+  // For multi-table operations requiring true atomicity, always use a dedicated Electron IPC operation
+  // on the Electron main process layer instead (such as 'factory-reset').
   (db as any).transaction = (mode: any, tables: any, callback: any) => {
     return callback();
   };
