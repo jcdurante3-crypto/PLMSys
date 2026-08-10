@@ -181,6 +181,13 @@ function initDbFile() {
     const tempFilePath = dbFilePath + '.tmp';
     fs.writeFileSync(tempFilePath, JSON.stringify(defaultDb, null, 2), 'utf8');
     fs.renameSync(tempFilePath, dbFilePath);
+    
+    // Also save a verified good backup immediately
+    try {
+      fs.copyFileSync(dbFilePath, dbFilePath + '.good.bak');
+    } catch (err) {
+      logToFile('warn', `Failed to write initial good backup copy: ${err}`);
+    }
   }
 }
 
@@ -190,7 +197,7 @@ function handleCorruptDbFile() {
       const corruptBackupPath = dbFilePath + `.corrupt-${Date.now()}`;
       fs.renameSync(dbFilePath, corruptBackupPath);
       logToFile('info', `Corrupted database file was renamed and preserved at: ${corruptBackupPath}`);
-      dbErrorStatus = `Database file was corrupted and has been renamed to protect your data. A new database was initialized. Corrupted file saved at: ${path.basename(corruptBackupPath)}`;
+      dbErrorStatus = `Database file was corrupted and has been renamed to protect your data. Corrupted file saved at: ${path.basename(corruptBackupPath)}`;
     }
   } catch (e) {
     logToFile('error', `Failed to rename corrupted database file: ${e}`);
@@ -202,27 +209,63 @@ function readDb() {
     initDbFile();
     const data = fs.readFileSync(dbFilePath, 'utf8');
     let parsed: any;
+    let parseFailed = false;
+    let parseErrorMsg = '';
     try {
       parsed = JSON.parse(data);
     } catch (parseErr: any) {
-      logToFile('error', `Database JSON parsing failed. File is corrupt: ${parseErr}`);
-      handleCorruptDbFile();
-      throw new Error(`Database JSON parsing failed. File was corrupt and was backed up. Error: ${parseErr.message}`);
+      parseFailed = true;
+      parseErrorMsg = parseErr.message;
     }
 
     // Verify all expected collections exist as arrays
     let isInvalid = false;
-    for (const table of ALLOWED_TABLES) {
-      if (!parsed || !Array.isArray(parsed[table])) {
-        isInvalid = true;
-        break;
+    if (!parseFailed) {
+      for (const table of ALLOWED_TABLES) {
+        if (!parsed || !Array.isArray(parsed[table])) {
+          isInvalid = true;
+          break;
+        }
       }
     }
 
-    if (isInvalid) {
-      logToFile('error', 'Database validation failed: Expected collections are missing or invalid.');
+    if (parseFailed || isInvalid) {
+      const reason = parseFailed 
+        ? `Database JSON parsing failed: ${parseErrorMsg}`
+        : 'Database validation failed: Expected collections are missing or invalid.';
+      logToFile('error', `${reason} Attempting recovery from latest good backup...`);
+      
+      const backupCopyPath = dbFilePath + '.good.bak';
+      if (fs.existsSync(backupCopyPath)) {
+        try {
+          const backupData = fs.readFileSync(backupCopyPath, 'utf8');
+          const backupParsed = JSON.parse(backupData);
+          
+          // Verify backup is valid
+          let backupInvalid = false;
+          for (const table of ALLOWED_TABLES) {
+            if (!backupParsed || !Array.isArray(backupParsed[table])) {
+              backupInvalid = true;
+              break;
+            }
+          }
+          
+          if (!backupInvalid) {
+            // Preserve the corrupted file first
+            handleCorruptDbFile();
+            // Copy backup to dbFilePath
+            fs.copyFileSync(backupCopyPath, dbFilePath);
+            logToFile('info', 'Database successfully auto-recovered and restored from latest known-good backup.');
+            return backupParsed;
+          }
+        } catch (backupRecoveryErr) {
+          logToFile('error', `Failed to restore from backup during auto-recovery: ${backupRecoveryErr}`);
+        }
+      }
+      
+      // If we reach here, we could not auto-recover
       handleCorruptDbFile();
-      throw new Error(`Database format is invalid. Required collections are missing.`);
+      throw new Error(`Database file is corrupt/invalid, and no valid backup was available for auto-recovery. Your corrupted data has been preserved. Details: ${reason}`);
     }
 
     return parsed;
@@ -240,35 +283,66 @@ function writeDb(data: any, table?: string, action?: string, args?: any[]) {
   try {
     logToFile('info', `DB WRITE START - table: ${table || 'N/A'}, action: ${action || 'N/A'}, database path: ${dbFilePath}`);
     
+    // 1. Write to temp file first to verify it writes successfully
     const tempFilePath = dbFilePath + '.tmp';
     fs.writeFileSync(tempFilePath, JSON.stringify(data, null, 2), 'utf8');
     
-    // Windows-safe write/rename sequence with backups
+    // 2. Perform the atomic, Windows-safe replacement with backup safety
+    const backupFilePath = dbFilePath + '.bak';
+    let backupCreated = false;
+    
     try {
       if (fs.existsSync(dbFilePath)) {
-        const backupFilePath = dbFilePath + '.bak';
         if (fs.existsSync(backupFilePath)) {
           fs.unlinkSync(backupFilePath);
         }
+        // Move current file to backup
         fs.renameSync(dbFilePath, backupFilePath);
-        fs.renameSync(tempFilePath, dbFilePath);
+        backupCreated = true;
+      }
+      
+      // Move temp file to current file path
+      fs.renameSync(tempFilePath, dbFilePath);
+      
+      // Clean up backup now that we successfully replaced it
+      if (backupCreated && fs.existsSync(backupFilePath)) {
         fs.unlinkSync(backupFilePath);
-      } else {
-        fs.renameSync(tempFilePath, dbFilePath);
       }
     } catch (renameErr) {
-      logToFile('warn', `Rename/replace failed, trying direct write fallback: ${renameErr}`);
-      fs.writeFileSync(dbFilePath, JSON.stringify(data, null, 2), 'utf8');
+      logToFile('error', `Atomic rename failed, attempting backup/fallback recovery: ${renameErr}`);
+      
+      // Restore the backup if we successfully renamed it
+      if (backupCreated && fs.existsSync(backupFilePath)) {
+        try {
+          if (fs.existsSync(dbFilePath)) {
+            fs.unlinkSync(dbFilePath);
+          }
+          fs.renameSync(backupFilePath, dbFilePath);
+          logToFile('info', 'Successfully restored database from backup after rename failure');
+        } catch (restoreErr) {
+          logToFile('critical', `Failed to restore database from backup: ${restoreErr}`);
+        }
+      } else {
+        // If no backup was created but temp file exists, try a direct write fallback
+        try {
+          fs.writeFileSync(dbFilePath, JSON.stringify(data, null, 2), 'utf8');
+          logToFile('info', 'Fallback write direct to dbFilePath succeeded');
+        } catch (writeErr) {
+          logToFile('critical', `Fallback direct write failed: ${writeErr}`);
+        }
+      }
+      
+      // Clean up temp file if still exists
       try {
         if (fs.existsSync(tempFilePath)) {
           fs.unlinkSync(tempFilePath);
         }
-      } catch (cleanErr) {
-        // ignore
-      }
+      } catch (cleanErr) {}
+      
+      throw renameErr; // Propagate rename error
     }
 
-    // Verify written file immediately
+    // 3. Verify written file immediately
     if (!fs.existsSync(dbFilePath)) {
       throw new Error(`Verification failed: Database file does not exist at ${dbFilePath}`);
     }
@@ -280,10 +354,15 @@ function writeDb(data: any, table?: string, action?: string, args?: any[]) {
       throw new Error(`Verification failed: Parsed JSON from written file is invalid: ${parseErr}`);
     }
 
-    if (table) {
-      if (!verifiedData[table] || !Array.isArray(verifiedData[table])) {
-        throw new Error(`Verification failed: Table "${table}" is missing or not an array in written database.`);
+    // Verify all expected tables exist
+    for (const allowedTable of ALLOWED_TABLES) {
+      if (!verifiedData[allowedTable] || !Array.isArray(verifiedData[allowedTable])) {
+        throw new Error(`Verification failed: Table "${allowedTable}" is missing or invalid in verified database.`);
       }
+    }
+
+    // If a specific table and action were requested, verify that change is present
+    if (table) {
       const collection = verifiedData[table];
       if (action === 'put' || action === 'add') {
         const item = args && args[0];
@@ -327,6 +406,14 @@ function writeDb(data: any, table?: string, action?: string, args?: any[]) {
           throw new Error(`Verification failed: Table "${table}" was cleared but still contains ${collection.length} records.`);
         }
       }
+    }
+
+    // 4. Save a known-good backup copy since verification succeeded
+    const goodBackupCopyPath = dbFilePath + '.good.bak';
+    try {
+      fs.copyFileSync(dbFilePath, goodBackupCopyPath);
+    } catch (backupErr) {
+      logToFile('warn', `Failed to save verified good backup copy: ${backupErr}`);
     }
 
     const stats = fs.statSync(dbFilePath);

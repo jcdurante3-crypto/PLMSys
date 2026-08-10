@@ -116,22 +116,23 @@ export async function seedDatabase(setCount: number = 2, force: boolean = false)
 
     // Inside browser fallback:
     if (!force) {
-      // For browser fallback, we use a localStorage flag to check if we've already done first-time creation.
-      const hasInitialized = localStorage.getItem('plmsys_browser_initialized');
-      if (hasInitialized) {
-        return;
-      }
-      
-      // Secondary safety check: check if database tables already have records in IndexedDB
+      // 1. Check IndexedDB counts FIRST. If there is data in any key table, we must NEVER clear/overwrite it!
       try {
         const existingSetsCount = await db.sets.count();
         const existingPersonnelCount = await db.personnel.count();
-        if (existingSetsCount > 0 || existingPersonnelCount > 0) {
+        const existingPlatesCount = await db.plates.count();
+        if (existingSetsCount > 0 || existingPersonnelCount > 0 || existingPlatesCount > 0) {
           localStorage.setItem('plmsys_browser_initialized', 'true');
           return;
         }
       } catch (dbCheckErr) {
         console.warn('Failed to check database counts, proceeding with fallback check:', dbCheckErr);
+      }
+
+      // 2. Fallback to localStorage flag check
+      const hasInitialized = localStorage.getItem('plmsys_browser_initialized');
+      if (hasInitialized) {
+        return;
       }
       
       localStorage.setItem('plmsys_browser_initialized', 'true');

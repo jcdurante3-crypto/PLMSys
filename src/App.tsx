@@ -1011,7 +1011,7 @@ export default function App() {
     try {
       setSelectedSetId(null);
       setSelectedPosModal(null);
-      await seedDatabase(0, true);
+      await seedDatabase(2, true);
       await loadData();
     } catch (err) {
       console.error('Failed to restore factory settings:', err);
