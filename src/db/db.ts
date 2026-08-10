@@ -100,7 +100,7 @@ export function generateUUID(): string {
 
 // Seed initial database if empty or force reset
 let isSeeding = false;
-export async function seedDatabase(setCount: number = 2, force: boolean = false) {
+export async function seedDatabase(setCount: number = 0, force: boolean = false) {
   if (isSeeding && !force) return;
   isSeeding = true;
   

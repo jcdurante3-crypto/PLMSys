@@ -66,13 +66,6 @@ const steps: TutorialStep[] = [
     tip: 'Use date filters to inspect specific operating shifts.'
   },
   {
-    title: 'Barcode & Serial Scanner',
-    tab: 'search',
-    icon: <QrCode className="w-6 h-6 text-[#F27D26]" />,
-    description: 'Quickly look up plates or scan barcodes to instantly retrieve plate history, current position, total cycle wear, and installation dates.',
-    tip: 'Saves time during physical mold inspections on the shop floor.'
-  },
-  {
     title: 'Plate & Record Search',
     tab: 'search',
     icon: <Search className="w-6 h-6 text-[#F27D26]" />,
