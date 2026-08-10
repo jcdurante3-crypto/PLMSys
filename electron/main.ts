@@ -843,15 +843,101 @@ ipcMain.handle('open-backup-folder', async () => {
   }
 });
 
-ipcMain.handle('save-backup', async (event, backupDataText: string) => {
-  logToFile('info', 'IPC save-backup triggered');
+// --- Backup & Restore System ---
+
+function enforceBackupRetention() {
   try {
-    const todayStr = new Date().toISOString().split('T')[0];
-    const defaultBackupPath = path.join(dirs.backups, `plate-lifecycle-backup-${todayStr}.json`);
+    if (!fs.existsSync(dirs.backups)) return;
+    const files = fs.readdirSync(dirs.backups)
+      .filter(f => f.startsWith('plmsys-backup-') && f.endsWith('.json'))
+      .map(f => {
+        const filePath = path.join(dirs.backups, f);
+        const stats = fs.statSync(filePath);
+        return { name: f, path: filePath, time: stats.mtimeMs };
+      })
+      .sort((a, b) => b.time - a.time); // newest first
+    
+    // Keep 10 backups
+    if (files.length > 10) {
+      const toDelete = files.slice(10);
+      for (const file of toDelete) {
+        try {
+          fs.unlinkSync(file.path);
+          logToFile('info', `Enforced retention: deleted old backup ${file.name}`);
+        } catch (e) {
+          logToFile('warn', `Failed to delete old backup ${file.name}: ${e}`);
+        }
+      }
+    }
+  } catch (err) {
+    logToFile('error', `Failed to enforce backup retention: ${err}`);
+  }
+}
+
+function createBackupInternal(prefix: string): { success: boolean; filePath?: string; error?: string } {
+  try {
+    // Only back up if we have a valid database
+    if (!fs.existsSync(dbFilePath)) {
+      throw new Error('No production database exists to back up.');
+    }
+    const currentData = fs.readFileSync(dbFilePath, 'utf8');
+    const parsed = JSON.parse(currentData);
+    if (!validateDb(parsed)) {
+      throw new Error('Current database is invalid. Refusing to back up a corrupted database.');
+    }
+
+    const dateStr = new Date().toISOString().replace(/T/, '-').replace(/:/g, '-').split('.')[0];
+    const backupFilename = `${prefix}-${dateStr}.json`;
+    const backupPath = path.join(dirs.backups, backupFilename);
+    
+    fs.writeFileSync(backupPath, currentData, 'utf8');
+    
+    // Verify it was written correctly
+    const readBack = fs.readFileSync(backupPath, 'utf8');
+    if (!validateDb(JSON.parse(readBack))) {
+      fs.unlinkSync(backupPath); // Delete the bad backup
+      throw new Error('Created backup failed validation.');
+    }
+
+    enforceBackupRetention();
+
+    logToFile('info', `Backup created successfully at: ${backupPath}`);
+    return { success: true, filePath: backupPath };
+  } catch (err: any) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    logToFile('error', `Backup creation failed: ${errMsg}`);
+    return { success: false, error: errMsg };
+  }
+}
+
+ipcMain.handle('create-automatic-backup', async () => {
+  logToFile('info', 'IPC create-automatic-backup triggered');
+  return createBackupInternal('plmsys-backup');
+});
+
+ipcMain.handle('create-manual-backup', async () => {
+  logToFile('info', 'IPC create-manual-backup triggered');
+  return createBackupInternal('plmsys-backup');
+});
+
+ipcMain.handle('export-backup', async () => {
+  logToFile('info', 'IPC export-backup triggered');
+  try {
+    if (!fs.existsSync(dbFilePath)) {
+      throw new Error('No production database exists to export.');
+    }
+    const currentData = fs.readFileSync(dbFilePath, 'utf8');
+    const parsed = JSON.parse(currentData);
+    if (!validateDb(parsed)) {
+      throw new Error('Current database is invalid. Refusing to export a corrupted database.');
+    }
+
+    const dateStr = new Date().toISOString().replace(/T/, '-').replace(/:/g, '-').split('.')[0];
+    const defaultExportPath = path.join(app.getPath('downloads'), `plmsys-export-${dateStr}.json`);
 
     const { filePath, canceled } = await dialog.showSaveDialog({
-      title: 'Export Database Backup',
-      defaultPath: defaultBackupPath,
+      title: 'Export Complete Database Backup',
+      defaultPath: defaultExportPath,
       filters: [{ name: 'JSON Files', extensions: ['json'] }],
     });
 
@@ -860,54 +946,148 @@ ipcMain.handle('save-backup', async (event, backupDataText: string) => {
       return { success: false, cancelled: true };
     }
 
-    await fs.promises.writeFile(filePath, backupDataText, 'utf8');
-    logToFile('info', `Backup exported successfully to ${filePath}`);
+    fs.writeFileSync(filePath, currentData, 'utf8');
     
-    // Also save a copy inside the local backups folder as a history snapshot
-    const localHistoryPath = path.join(dirs.backups, `auto-backup-snap.json`);
-    await fs.promises.writeFile(localHistoryPath, backupDataText, 'utf8');
+    // Verify the exported file
+    const verifyData = fs.readFileSync(filePath, 'utf8');
+    if (!validateDb(JSON.parse(verifyData))) {
+      throw new Error('Exported backup failed validation.');
+    }
 
+    logToFile('info', `Backup exported successfully to ${filePath}`);
     return { success: true, filePath };
-  } catch (err) {
+  } catch (err: any) {
     const errMsg = err instanceof Error ? err.message : String(err);
-    logToFile('error', `Backup save error: ${errMsg}`);
+    logToFile('error', `Backup export error: ${errMsg}`);
     return { success: false, error: errMsg };
   }
 });
 
-ipcMain.handle('load-backup', async () => {
-  logToFile('info', 'IPC load-backup triggered');
+ipcMain.handle('restore-backup', async () => {
+  logToFile('info', 'IPC restore-backup triggered');
+  
+  const safetyBackupPath = dbFilePath + '.restore-safety.bak';
+  let safetyBackupCreated = false;
+  
   try {
     const { filePaths, canceled } = await dialog.showOpenDialog({
-      title: 'Import Database Backup',
+      title: 'Restore Database Backup',
       defaultPath: dirs.backups,
       filters: [{ name: 'JSON Files', extensions: ['json'] }],
       properties: ['openFile'],
     });
 
     if (canceled || filePaths.length === 0) {
-      logToFile('info', 'Backup import canceled by user');
+      logToFile('info', 'Backup restore canceled by user');
       return { success: false, cancelled: true };
     }
 
-    const filePath = filePaths[0];
-    const data = await fs.promises.readFile(filePath, 'utf8');
+    const selectedFilePath = filePaths[0];
+    const data = await fs.promises.readFile(selectedFilePath, 'utf8');
     
     // Validate backup using the shared database validator
     const parsed = JSON.parse(data);
     if (!validateDb(parsed)) {
-      logToFile('error', `Backup validation failed for file: ${filePath}`);
-      return { success: false, error: 'Invalid backup format: Every required table must exist and be an array.' };
+      logToFile('error', `Restore validation failed for file: ${selectedFilePath}`);
+      return { success: false, error: 'The selected backup is invalid.' };
     }
 
-    logToFile('info', `Backup file loaded and validated successfully: ${filePath}`);
-    return { success: true, data };
-  } catch (err) {
+    logToFile('info', `Backup file loaded and validated successfully: ${selectedFilePath}. Proceeding with safe restore.`);
+
+    // SAFE RESTORE PROCESS
+    
+    // 1. Create safety backup of current database
+    if (fs.existsSync(dbFilePath)) {
+      try {
+        fs.copyFileSync(dbFilePath, safetyBackupPath);
+        safetyBackupCreated = true;
+        logToFile('info', `Restore safety backup created at: ${safetyBackupPath}`);
+      } catch (backupErr) {
+        logToFile('warn', `Failed to create restore safety backup: ${backupErr}`);
+      }
+    }
+    
+    // 2. Write selected backup using the safe persistence mechanism
+    writeDb(parsed); // This will do .tmp -> rename -> verify
+    
+    // 3. Verify it physically on disk
+    if (!fs.existsSync(dbFilePath)) {
+      throw new Error('Verification failed: Production database file does not exist after restore.');
+    }
+    const verifyContent = fs.readFileSync(dbFilePath, 'utf8');
+    const verifiedData = JSON.parse(verifyContent);
+    if (!validateDb(verifiedData)) {
+      throw new Error('Verification failed: Restored database has invalid schema on disk.');
+    }
+
+    // 4. Only then delete the safety backup since verification succeeded
+    if (safetyBackupCreated && fs.existsSync(safetyBackupPath)) {
+      try {
+        fs.unlinkSync(safetyBackupPath);
+      } catch (unlinkErr) {
+        logToFile('warn', `Failed to delete restore safety backup: ${unlinkErr}`);
+      }
+    }
+
+    logToFile('info', 'Database successfully restored from backup.');
+    return { success: true };
+  } catch (err: any) {
     const errMsg = err instanceof Error ? err.message : String(err);
-    logToFile('error', `Backup load error: ${errMsg}`);
+    logToFile('error', `Failed to execute restore-backup IPC: ${errMsg}. Attempting restore of previous database...`);
+    
+    // 5. If Restore fails: restore previous database and report failure
+    if (safetyBackupCreated && fs.existsSync(safetyBackupPath)) {
+      try {
+        if (fs.existsSync(dbFilePath)) {
+          fs.unlinkSync(dbFilePath);
+        }
+        fs.renameSync(safetyBackupPath, dbFilePath);
+        
+        // Verify restoration
+        const restoredContent = fs.readFileSync(dbFilePath, 'utf8');
+        const restoredParsed = JSON.parse(restoredContent);
+        if (!validateDb(restoredParsed)) {
+          throw new Error('Restore recovery restoration failed validation.');
+        }
+        logToFile('info', 'Successfully restored and verified previous database from safety backup after restore failure.');
+      } catch (restoreErr: any) {
+        logToFile('critical', `Failed to restore/verify previous database from safety backup: ${restoreErr.message}`);
+      }
+    }
+    
     return { success: false, error: errMsg };
   }
 });
+
+ipcMain.handle('get-backups', async () => {
+  logToFile('info', 'IPC get-backups triggered');
+  try {
+    if (!fs.existsSync(dirs.backups)) {
+      return { success: true, backups: [] };
+    }
+    
+    const files = fs.readdirSync(dirs.backups)
+      .filter(f => f.startsWith('plmsys-backup-') && f.endsWith('.json'))
+      .map(f => {
+        const filePath = path.join(dirs.backups, f);
+        const stats = fs.statSync(filePath);
+        return {
+          filename: f,
+          date: new Date(stats.mtimeMs).toISOString(),
+          sizeMB: (stats.size / (1024 * 1024)).toFixed(2),
+          path: filePath
+        };
+      })
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      
+    return { success: true, backups: files };
+  } catch (err: any) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    logToFile('error', `Failed to get backups: ${errMsg}`);
+    return { success: false, error: errMsg };
+  }
+});
+
 
 ipcMain.handle('write-log', async (event, level: string, message: string) => {
   logToFile(level, message);

@@ -65,9 +65,7 @@ export default function App() {
   useAutoBackup({
     onBackup: async () => {
       console.log('Performing scheduled/threshold auto-backup');
-      if (window.electronAPI) {
-        await window.electronAPI.createAutomaticBackup();
-      }
+      await handleExportBackup();
     },
     logCount: auditLogs.length,
     activityThreshold: 50
@@ -848,23 +846,173 @@ export default function App() {
     await loadData();
   };
 
+  const handleExportBackup = async () => {
+    const backupData = {
+      sets: await db.sets.toArray(),
+      positions: await db.positions.toArray(),
+      plates: await db.plates.toArray(),
+      installations: await db.plateInstallations.toArray(),
+      removals: await db.plateRemovals.toArray(),
+      dailyProduction: await db.dailyProduction.toArray(),
+      replacements: await db.replacements.toArray(),
+      jobOrders: await db.jobOrders.toArray(),
+      auditLogs: await db.auditLogs.toArray(),
+      personnel: await db.personnel.toArray(),
+    };
+
+    const backupText = JSON.stringify(backupData, null, 2);
+
+    if (window.electronAPI) {
+      await window.electronAPI.writeLog('info', 'Starting database backup export via native save dialog...');
+      const res = await window.electronAPI.saveBackup(backupText);
+      if (res.success) {
+        await window.electronAPI.writeLog('info', `Database backup successfully exported to: ${res.filePath}`);
+        alert(`Database backup exported successfully to:\n${res.filePath}`);
+      } else if (res.error) {
+        await window.electronAPI.writeLog('error', `Database backup export failed: ${res.error}`);
+        alert(`Failed to save database backup: ${res.error}`);
+      } else {
+        await window.electronAPI.writeLog('info', 'Database backup export was cancelled by the user.');
+      }
+      return;
+    }
+
+    const blob = new Blob([backupText], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `plate-lifecycle-backup-${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportBackup = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (window.electronAPI) {
+      try {
+        await window.electronAPI.writeLog('info', 'Starting database restore via native open dialog...');
+        
+        // Safety Auto-Backup before overwrite
+        const currentData = {
+          sets: await db.sets.toArray(),
+          positions: await db.positions.toArray(),
+          plates: await db.plates.toArray(),
+          installations: await db.plateInstallations.toArray(),
+          removals: await db.plateRemovals.toArray(),
+          dailyProduction: await db.dailyProduction.toArray(),
+          replacements: await db.replacements.toArray(),
+          jobOrders: await db.jobOrders.toArray(),
+          auditLogs: await db.auditLogs.toArray(),
+          personnel: await db.personnel.toArray(),
+        };
+        // Silently save snapshot to data/backups/auto-backup-snap.json
+        await window.electronAPI.saveBackup(JSON.stringify(currentData, null, 2));
+
+        const res = await window.electronAPI.loadBackup();
+        if (res.success && res.data) {
+          const json = JSON.parse(res.data);
+          
+          await db.transaction('rw', [
+            db.sets,
+            db.positions,
+            db.plates,
+            db.plateInstallations,
+            db.plateRemovals,
+            db.dailyProduction,
+            db.replacements,
+            db.jobOrders,
+            db.auditLogs,
+            db.personnel
+          ], async () => {
+            await db.sets.clear();
+            await db.positions.clear();
+            await db.plates.clear();
+            await db.plateInstallations.clear();
+            await db.plateRemovals.clear();
+            await db.dailyProduction.clear();
+            await db.replacements.clear();
+            await db.jobOrders.clear();
+            await db.auditLogs.clear();
+            await db.personnel.clear();
+
+            if (json.sets?.length) await db.sets.bulkPut(json.sets);
+            if (json.positions?.length) await db.positions.bulkPut(json.positions);
+            if (json.plates?.length) await db.plates.bulkPut(json.plates);
+            if (json.installations?.length) await db.plateInstallations.bulkPut(json.installations);
+            if (json.removals?.length) await db.plateRemovals.bulkPut(json.removals);
+            if (json.dailyProduction?.length) await db.dailyProduction.bulkPut(json.dailyProduction);
+            if (json.replacements?.length) await db.replacements.bulkPut(json.replacements);
+            if (json.jobOrders?.length) await db.jobOrders.bulkPut(json.jobOrders);
+            if (json.auditLogs?.length) await db.auditLogs.bulkPut(json.auditLogs);
+            if (json.personnel?.length) await db.personnel.bulkPut(json.personnel);
+          });
+
+          await window.electronAPI.writeLog('info', 'Database backup successfully restored.');
+          alert('Database backup restored successfully!');
+          await loadData();
+        } else if (res.error) {
+          await window.electronAPI.writeLog('error', `Database restore failed: ${res.error}`);
+          alert(`Database restore failed: ${res.error}`);
+        } else {
+          await window.electronAPI.writeLog('info', 'Database restore was cancelled by the user.');
+        }
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        await window.electronAPI.writeLog('error', `Failed to parse or apply backup: ${errMsg}`);
+        alert(`Failed to restore backup: ${errMsg}`);
+      }
+      return;
+    }
+
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const json = JSON.parse(e.target?.result as string);
+        if (json.sets && json.positions) {
+          await db.sets.clear();
+          await db.positions.clear();
+          await db.plates.clear();
+          await db.plateInstallations.clear();
+          await db.plateRemovals.clear();
+          await db.dailyProduction.clear();
+          await db.replacements.clear();
+          await db.jobOrders.clear();
+          await db.auditLogs.clear();
+          await db.personnel.clear();
+
+          if (json.sets.length) await db.sets.bulkPut(json.sets);
+          if (json.positions.length) await db.positions.bulkPut(json.positions);
+          if (json.plates.length) await db.plates.bulkPut(json.plates);
+          if (json.installations?.length) await db.plateInstallations.bulkPut(json.installations);
+          if (json.removals?.length) await db.plateRemovals.bulkPut(json.removals);
+          if (json.dailyProduction?.length) await db.dailyProduction.bulkPut(json.dailyProduction);
+          if (json.replacements?.length) await db.replacements.bulkPut(json.replacements);
+          if (json.jobOrders?.length) await db.jobOrders.bulkPut(json.jobOrders);
+          if (json.auditLogs?.length) await db.auditLogs.bulkPut(json.auditLogs);
+          if (json.personnel?.length) await db.personnel.bulkPut(json.personnel);
+
+          alert('Database backup restored successfully!');
+          await loadData();
+        } else {
+          alert('Invalid backup file format.');
+        }
+      } catch (err) {
+        console.error(err);
+        alert('Failed to parse backup JSON file.');
+      }
+    };
+    reader.readAsText(file);
+  };
+
   const handleRestoreFactory = async () => {
     setLoading(true);
     try {
       setSelectedSetId(null);
       setSelectedPosModal(null);
-      if (window.electronAPI) {
-        const res = await window.electronAPI.factoryReset(2);
-        if (res.success) {
-          window.location.reload();
-          return;
-        } else {
-          throw new Error(res.error || 'Unknown factory reset error');
-        }
-      } else {
-        await seedDatabase(2, true);
-        await loadData();
-      }
+      await seedDatabase(2, true);
+      await loadData();
     } catch (err) {
       console.error('Failed to restore factory settings:', err);
       alert('Failed to restore factory settings: ' + (err instanceof Error ? err.message : String(err)));
@@ -1005,6 +1153,8 @@ export default function App() {
             {activeTab === 'admin' && (
               currentUser.role === 'ADMIN' ? (
                 <AdminDashboard 
+                  onExportBackup={handleExportBackup} 
+                  onImportBackup={handleImportBackup} 
                   onRestoreFactory={handleRestoreFactory}
                 />
               ) : (

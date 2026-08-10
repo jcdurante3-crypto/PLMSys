@@ -159,14 +159,18 @@ declare global {
     electronAPI?: {
       openDataFolder: () => Promise<void>;
       openBackupFolder: () => Promise<void>;
-      saveBackup: (backupDataText: string) => Promise<{ success: boolean; filePath?: string; cancelled?: boolean; error?: string }>;
-      loadBackup: () => Promise<{ success: boolean; data?: string; cancelled?: boolean; error?: string }>;
+      createAutomaticBackup: () => Promise<{ success: boolean; filePath?: string; error?: string }>;
+      createManualBackup: () => Promise<{ success: boolean; filePath?: string; error?: string }>;
+      exportBackup: () => Promise<{ success: boolean; filePath?: string; cancelled?: boolean; error?: string }>;
+      restoreBackup: () => Promise<{ success: boolean; cancelled?: boolean; error?: string }>;
+      getBackups: () => Promise<{ success: boolean; backups?: BackupInfo[]; error?: string }>;
       writeLog: (level: string, message: string) => Promise<void>;
       getAppInfo: () => Promise<{ isPackaged: boolean; version: string; dataDirectory: string }>;
       dbAction: (table: string, action: string, args: any[]) => Promise<any>;
       factoryReset: (setCount: number) => Promise<{ success: boolean; error?: string }>;
-      getDbStatus: () => Promise<{ success: boolean; error: string | null }>;
+      getDbStatus: () => Promise<{ status: string; success: boolean; error: string | null; recoveryStatus?: string; details?: any }>;
     };
   }
 }
 
+export interface BackupInfo { filename: string; date: string; sizeMB: string; path: string; }
