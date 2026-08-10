@@ -163,6 +163,33 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExportBackup, 
                   Automatic backups are triggered periodically to ensure data integrity during long-running sessions.
                 </p>
               </div>
+
+              {typeof window !== 'undefined' && (window as any).electronAPI && (
+                <div className="p-4 bg-[#0A0B0E] rounded-lg border border-[#1E222A] space-y-3 mt-2">
+                  <h4 className="text-xs font-bold text-white uppercase tracking-wider">Portable File Locations</h4>
+                  <p className="text-xs text-[#8E9299] leading-relaxed">
+                    View or copy your local persistent data files, backups, and logs stored beside the application executable.
+                  </p>
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    <button
+                      onClick={async () => {
+                        await (window as any).electronAPI.openDataFolder();
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-[#191D28] hover:bg-[#252A38] border border-[#1E222A] text-gray-300 rounded-lg text-xs font-semibold cursor-pointer transition-colors"
+                    >
+                      Open Data Folder
+                    </button>
+                    <button
+                      onClick={async () => {
+                        await (window as any).electronAPI.openBackupFolder();
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-[#191D28] hover:bg-[#252A38] border border-[#1E222A] text-gray-300 rounded-lg text-xs font-semibold cursor-pointer transition-colors"
+                    >
+                      Open Backup Folder
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </motion.div>

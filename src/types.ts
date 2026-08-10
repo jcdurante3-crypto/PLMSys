@@ -153,3 +153,17 @@ export interface Personnel {
   isAuthorized: boolean;
   password?: string;
 }
+
+declare global {
+  interface Window {
+    electronAPI?: {
+      openDataFolder: () => Promise<void>;
+      openBackupFolder: () => Promise<void>;
+      saveBackup: (backupDataText: string) => Promise<{ success: boolean; filePath?: string; cancelled?: boolean; error?: string }>;
+      loadBackup: () => Promise<{ success: boolean; data?: string; cancelled?: boolean; error?: string }>;
+      writeLog: (level: string, message: string) => Promise<void>;
+      getAppInfo: () => Promise<{ isPackaged: boolean; version: string; dataDirectory: string }>;
+    };
+  }
+}
+

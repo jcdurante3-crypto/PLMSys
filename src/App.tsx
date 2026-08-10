@@ -847,7 +847,24 @@ export default function App() {
       personnel: await db.personnel.toArray(),
     };
 
-    const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+    const backupText = JSON.stringify(backupData, null, 2);
+
+    if (window.electronAPI) {
+      await window.electronAPI.writeLog('info', 'Starting database backup export via native save dialog...');
+      const res = await window.electronAPI.saveBackup(backupText);
+      if (res.success) {
+        await window.electronAPI.writeLog('info', `Database backup successfully exported to: ${res.filePath}`);
+        alert(`Database backup exported successfully to:\n${res.filePath}`);
+      } else if (res.error) {
+        await window.electronAPI.writeLog('error', `Database backup export failed: ${res.error}`);
+        alert(`Failed to save database backup: ${res.error}`);
+      } else {
+        await window.electronAPI.writeLog('info', 'Database backup export was cancelled by the user.');
+      }
+      return;
+    }
+
+    const blob = new Blob([backupText], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -857,6 +874,82 @@ export default function App() {
   };
 
   const handleImportBackup = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (window.electronAPI) {
+      try {
+        await window.electronAPI.writeLog('info', 'Starting database restore via native open dialog...');
+        
+        // Safety Auto-Backup before overwrite
+        const currentData = {
+          sets: await db.sets.toArray(),
+          positions: await db.positions.toArray(),
+          plates: await db.plates.toArray(),
+          installations: await db.plateInstallations.toArray(),
+          removals: await db.plateRemovals.toArray(),
+          dailyProduction: await db.dailyProduction.toArray(),
+          replacements: await db.replacements.toArray(),
+          jobOrders: await db.jobOrders.toArray(),
+          auditLogs: await db.auditLogs.toArray(),
+          personnel: await db.personnel.toArray(),
+        };
+        // Silently save snapshot to data/backups/auto-backup-snap.json
+        await window.electronAPI.saveBackup(JSON.stringify(currentData, null, 2));
+
+        const res = await window.electronAPI.loadBackup();
+        if (res.success && res.data) {
+          const json = JSON.parse(res.data);
+          
+          await db.transaction('rw', [
+            db.sets,
+            db.positions,
+            db.plates,
+            db.plateInstallations,
+            db.plateRemovals,
+            db.dailyProduction,
+            db.replacements,
+            db.jobOrders,
+            db.auditLogs,
+            db.personnel
+          ], async () => {
+            await db.sets.clear();
+            await db.positions.clear();
+            await db.plates.clear();
+            await db.plateInstallations.clear();
+            await db.plateRemovals.clear();
+            await db.dailyProduction.clear();
+            await db.replacements.clear();
+            await db.jobOrders.clear();
+            await db.auditLogs.clear();
+            await db.personnel.clear();
+
+            if (json.sets?.length) await db.sets.bulkPut(json.sets);
+            if (json.positions?.length) await db.positions.bulkPut(json.positions);
+            if (json.plates?.length) await db.plates.bulkPut(json.plates);
+            if (json.installations?.length) await db.plateInstallations.bulkPut(json.installations);
+            if (json.removals?.length) await db.plateRemovals.bulkPut(json.removals);
+            if (json.dailyProduction?.length) await db.dailyProduction.bulkPut(json.dailyProduction);
+            if (json.replacements?.length) await db.replacements.bulkPut(json.replacements);
+            if (json.jobOrders?.length) await db.jobOrders.bulkPut(json.jobOrders);
+            if (json.auditLogs?.length) await db.auditLogs.bulkPut(json.auditLogs);
+            if (json.personnel?.length) await db.personnel.bulkPut(json.personnel);
+          });
+
+          await window.electronAPI.writeLog('info', 'Database backup successfully restored.');
+          alert('Database backup restored successfully!');
+          await loadData();
+        } else if (res.error) {
+          await window.electronAPI.writeLog('error', `Database restore failed: ${res.error}`);
+          alert(`Database restore failed: ${res.error}`);
+        } else {
+          await window.electronAPI.writeLog('info', 'Database restore was cancelled by the user.');
+        }
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        await window.electronAPI.writeLog('error', `Failed to parse or apply backup: ${errMsg}`);
+        alert(`Failed to restore backup: ${errMsg}`);
+      }
+      return;
+    }
+
     const file = event.target.files?.[0];
     if (!file) return;
 
