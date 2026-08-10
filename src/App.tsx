@@ -29,6 +29,7 @@ import { LoginModal } from './components/LoginModal';
 import { RegistryModal } from './components/RegistryModal';
 import { AdminLoginModal } from './components/AdminLoginModal';
 import { AdminDashboard } from './components/AdminDashboard';
+import { TutorialOverlay } from './components/TutorialOverlay';
 import { useAutoBackup } from './hooks/useAutoBackup';
 
 export default function App() {
@@ -50,6 +51,14 @@ export default function App() {
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [showAdminLoginModal, setShowAdminLoginModal] = useState(false);
   const [showRegistryModal, setShowRegistryModal] = useState(false);
+  const [showTutorial, setShowTutorial] = useState(() => {
+    return !localStorage.getItem('plm_tutorial_shown');
+  });
+
+  const handleCloseTutorial = () => {
+    localStorage.setItem('plm_tutorial_shown', 'true');
+    setShowTutorial(false);
+  };
 
   const [showScannerModal, setShowScannerModal] = useState(false);
   const [showCreateSetModal, setShowCreateSetModal] = useState(false);
@@ -951,6 +960,7 @@ export default function App() {
         currentUser={currentUser}
         onOpenRegistry={() => setShowRegistryModal(true)}
         onOpenLogin={() => setShowLoginModal(true)}
+        onOpenTutorial={() => setShowTutorial(true)}
       />
 
       <main className="flex-1 w-full max-w-full px-4 sm:px-6 lg:px-8 py-6">
@@ -1097,6 +1107,11 @@ export default function App() {
           onLogin={handleAdminLogin}
         />
       )}
+
+      <TutorialOverlay
+        isOpen={showTutorial}
+        onClose={handleCloseTutorial}
+      />
     </div>
   );
 }

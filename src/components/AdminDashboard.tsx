@@ -2,6 +2,7 @@ import React, { useRef, useState, useEffect } from 'react';
 import { Download, Upload, Shield, Database, Clock, Activity, AlertCircle, HardDrive, CheckCircle2 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { db } from '../db/db';
+import { FactoryResetModal } from './FactoryResetModal';
 
 interface AdminDashboardProps {
   onExportBackup: () => Promise<void>;
@@ -12,15 +13,29 @@ interface AdminDashboardProps {
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExportBackup, onImportBackup, onRestoreFactory }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dbInfo, setDbInfo] = useState<{ dbPath: string; appDir: string; isInsideAppFolder: boolean; backend: string } | null>(null);
+  const [showFactoryModal, setShowFactoryModal] = useState(false);
+  const [stats, setStats] = useState({ sets: 0, plates: 0, productionLogs: 0, auditLogs: 0, personnel: 0 });
 
   useEffect(() => {
     db.getDbInfo().then(setDbInfo);
+    Promise.all([
+      db.sets.count(),
+      db.plates.count(),
+      db.dailyProduction.count(),
+      db.auditLogs.count(),
+      db.personnel.count(),
+    ]).then(([sets, plates, productionLogs, auditLogs, personnel]) => {
+      setStats({ sets, plates, productionLogs, auditLogs, personnel });
+    });
   }, []);
 
-  const handleRestore = async () => {
-    if (window.confirm('Are you absolutely sure you want to restore factory settings? This will PERMANENTLY DELETE all sets, positions, production logs, and custom data.')) {
-      await onRestoreFactory();
-    }
+  const handleRestoreClick = () => {
+    setShowFactoryModal(true);
+  };
+
+  const handleConfirmReset = async () => {
+    await onRestoreFactory();
+    setShowFactoryModal(false);
   };
 
   return (
@@ -93,7 +108,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExportBackup, 
                 </div>
               </div>
 
-              <div className="flex items-start gap-3 p-4 bg-rose-500/5 rounded-lg border border-rose-500/10">
+               <div className="flex items-start gap-3 p-4 bg-rose-500/5 rounded-lg border border-rose-500/10">
                 <div className="p-2 bg-rose-500/10 rounded text-rose-400">
                   <AlertCircle className="w-4 h-4" />
                 </div>
@@ -101,7 +116,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExportBackup, 
                   <h4 className="text-sm font-bold text-white mb-1">Factory Reset</h4>
                   <p className="text-xs text-[#8E9299] mb-3 leading-relaxed">Wipe all data and return the system to its original state. <span className="text-rose-500 font-bold underline">THIS CANNOT BE UNDONE.</span></p>
                   <button 
-                    onClick={handleRestore}
+                    onClick={handleRestoreClick}
                     className="flex items-center gap-2 px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-sm font-bold transition-all shadow-lg shadow-rose-500/20"
                   >
                     <AlertCircle className="w-4 h-4" />
@@ -176,6 +191,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExportBackup, 
           </div>
         </motion.div>
       </div>
+
+      <FactoryResetModal
+        isOpen={showFactoryModal}
+        onClose={() => setShowFactoryModal(false)}
+        onConfirm={handleConfirmReset}
+        onExport={onExportBackup}
+        stats={stats}
+      />
     </div>
   );
 };

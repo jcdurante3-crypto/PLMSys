@@ -1,5 +1,5 @@
 import React from 'react';
-import { Layers, Activity, Search, FileText, Sliders, User, Shield } from 'lucide-react';
+import { Layers, Activity, Search, FileText, Sliders, User, Shield, HelpCircle } from 'lucide-react';
 import { User as UserType } from '../types';
 
 interface NavbarProps {
@@ -9,6 +9,7 @@ interface NavbarProps {
   activeSetsCount: number;
   currentUser: UserType;
   onOpenLogin: () => void;
+  onOpenTutorial: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -18,6 +19,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   activeSetsCount,
   currentUser,
   onOpenLogin,
+  onOpenTutorial,
 }) => {
   return (
     <header className="bg-[#0F1117] text-[#E0E2E5] shadow-lg border-b border-[#1E222A] sticky top-0 z-40">
@@ -111,6 +113,15 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span className="font-semibold text-white">{currentUser.name}</span>
               <span className="bg-[#191D28] px-2 py-0.5 rounded text-[10px] uppercase">{currentUser.role}</span>
             </div>
+            
+            <button
+              onClick={onOpenTutorial}
+              title="Help & Tutorial"
+              className="p-2 text-[#8E9299] hover:text-white hover:bg-[#191D28] rounded-lg transition-colors border border-[#1E222A] flex items-center gap-1 text-xs px-3"
+            >
+              <HelpCircle className="w-4 h-4 text-[#F27D26]" />
+              <span className="hidden sm:inline">Tutorial</span>
+            </button>
             
             <button
               onClick={onOpenLogin}
