@@ -50,6 +50,7 @@
   "build": {
     "appId": "com.plm.system",
     "productName": "Plate Lifecycle Monitoring System",
+    "npmRebuild": false,
     "icon": "assets/icon.png",
     "directories": {
       "output": "release"

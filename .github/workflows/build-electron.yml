@@ -27,12 +27,14 @@ jobs:
         shell: bash
         run: |
           npm cache clean --force
-          npm ci
+          npm ci --include=optional
+          node -e "const fs = require('fs'); console.log('Checking optional native bindings for win32-x64:'); ['@esbuild/win32-x64', '@rollup/rollup-win32-x64-msvc', '@tailwindcss/oxide-win32-x64-msvc', 'lightningcss-win32-x64-msvc'].forEach(m => { const exists = fs.existsSync('node_modules/' + m); console.log(m, exists ? 'EXISTS' : 'MISSING'); });"
 
       - name: Build Electron App
         shell: bash
         run: npm run electron:build
         env:
+          CI: true
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: false
 
