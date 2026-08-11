@@ -22,19 +22,25 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: 'npm'
 
-      - name: Install dependencies
+      - name: Clean Cache & Install dependencies with npm ci and explicit native bindings
         shell: bash
         run: |
           npm cache clean --force
-          npm ci --include=optional
+          npm install --include=optional --force --legacy-peer-deps
+          npm install @esbuild/win32-x64 @rollup/rollup-win32-x64-msvc @tailwindcss/oxide-win32-x64-msvc lightningcss-win32-x64-msvc --no-save
           node -e "const fs = require('fs'); console.log('Checking optional native bindings for win32-x64:'); ['@esbuild/win32-x64', '@rollup/rollup-win32-x64-msvc', '@tailwindcss/oxide-win32-x64-msvc', 'lightningcss-win32-x64-msvc'].forEach(m => { const exists = fs.existsSync('node_modules/' + m); console.log(m, exists ? 'EXISTS' : 'MISSING'); });"
 
-      - name: Build Electron App
+      - name: Build and Package Electron App
         shell: bash
-        run: npm run electron:build
+        run: |
+          npm run build
+          npm run electron:build
         env:
           CI: true
+          USE_HARD_LINKS: "false"
+          ELECTRON_BUILDER_ALLOW_UNRESOLVED_DEPENDENCIES: "true"
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: false
 
@@ -43,3 +49,4 @@ jobs:
         with:
           name: electron-build-${{ matrix.os }}
           path: release/**/*
+
