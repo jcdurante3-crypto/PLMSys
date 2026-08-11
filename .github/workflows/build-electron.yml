@@ -28,7 +28,7 @@ jobs:
         run: |
           npm cache clean --force
           npm ci || npm install --include=optional --force
-          npm install --no-save @rollup/rollup-win32-x64-msvc
+          npm install --no-save @rollup/rollup-win32-x64-msvc @lightningcss/win32-x64-msvc
 
       - name: Build Electron App
         shell: bash
