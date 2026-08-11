@@ -30,8 +30,12 @@ import { RegistryModal } from './components/RegistryModal';
 import { AdminLoginModal } from './components/AdminLoginModal';
 import { AdminDashboard } from './components/AdminDashboard';
 import { TutorialModal } from './components/TutorialModal';
+import { NetworkSyncModal } from './components/NetworkSyncModal';
+import { UpdateModal } from './components/UpdateModal';
+import { ChangelogModal } from './components/ChangelogModal';
 import { useAutoBackup } from './hooks/useAutoBackup';
 import { Shield } from 'lucide-react';
+import { NetworkStorageConfig, UpdateRelease } from './types';
 
 export default function App() {
   const [loading, setLoading] = useState(true);
@@ -57,6 +61,35 @@ export default function App() {
   const [showScannerModal, setShowScannerModal] = useState(false);
   const [showCreateSetModal, setShowCreateSetModal] = useState(false);
   const [showLogProductionModal, setShowLogProductionModal] = useState(false);
+  const [showNetworkSyncModal, setShowNetworkSyncModal] = useState(false);
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
+  const [showChangelogModal, setShowChangelogModal] = useState(false);
+  const [isSyncingNetwork, setIsSyncingNetwork] = useState(false);
+
+  const [networkConfig, setNetworkConfig] = useState<NetworkStorageConfig>({
+    mode: 'LOCAL',
+    networkPath: '\\\\PLM-NAS\\SharedData\\plmsys_shared.json',
+    stationName: 'PC-01 (Line 1 Terminal)',
+    autoSyncIntervalSec: 3,
+    isOnline: true,
+    lastSyncedAt: new Date().toLocaleTimeString()
+  });
+
+  const [currentRelease] = useState<UpdateRelease>({
+    version: '2.4.0',
+    releaseDate: '2026-08-11',
+    isCritical: false,
+    downloadSizeMb: 28.4,
+    summary: 'Major Release: Multi-Platform Network Storage Real-Time Sync & Automated Update Engine',
+    changes: [
+      { category: 'FEATURE', description: 'Multi-User Local Network Storage Sync with real-time peer station detection across PC1 & PC2.' },
+      { category: 'FEATURE', description: 'Automated Software Update System featuring real-time percentage countdowns & animated installation pipeline.' },
+      { category: 'ENHANCEMENT', description: 'Interactive Release Notes & Categorized Version Changelog Viewer.' },
+      { category: 'ENHANCEMENT', description: 'Contextual Plate Replacement Confirmation View with Outgoing vs Incoming Specs.' },
+      { category: 'SECURITY', description: 'Station ID metadata attached directly to physical audit records.' }
+    ]
+  });
+
   const [selectedPosModal, setSelectedPosModal] = useState<{
     position: PositionRecord;
     action: 'install' | 'replace' | 'history';
@@ -129,9 +162,69 @@ export default function App() {
         }
       }
     };
+
+    const loadNetworkSettings = async () => {
+      if (window.electronAPI?.getNetworkStorageConfig) {
+        try {
+          const cfg = await window.electronAPI.getNetworkStorageConfig();
+          if (cfg) {
+            setNetworkConfig(cfg);
+          }
+        } catch (err) {
+          console.warn('Could not load network config from Electron API:', err);
+        }
+      }
+    };
+
     checkDbStatus();
+    loadNetworkSettings();
     loadData();
   }, []);
+
+  // Background Auto-Sync Effect for Shared Network Storage Mode
+  useEffect(() => {
+    if (networkConfig.mode !== 'NETWORK' || networkConfig.autoSyncIntervalSec <= 0) {
+      return;
+    }
+
+    const intervalMs = networkConfig.autoSyncIntervalSec * 1000;
+    const syncInterval = setInterval(async () => {
+      try {
+        await loadData();
+        setNetworkConfig((prev) => ({
+          ...prev,
+          lastSyncedAt: new Date().toLocaleTimeString()
+        }));
+      } catch (err) {
+        console.error('Network auto-sync background poll error:', err);
+      }
+    }, intervalMs);
+
+    return () => clearInterval(syncInterval);
+  }, [networkConfig.mode, networkConfig.autoSyncIntervalSec]);
+
+  const handleManualNetworkSync = async () => {
+    setIsSyncingNetwork(true);
+    try {
+      await loadData();
+      setNetworkConfig((prev) => ({
+        ...prev,
+        lastSyncedAt: new Date().toLocaleTimeString()
+      }));
+    } catch (err) {
+      console.error('Manual network sync error:', err);
+    } finally {
+      setIsSyncingNetwork(false);
+    }
+  };
+
+  const handleSaveNetworkConfig = async (newConfig: NetworkStorageConfig) => {
+    setNetworkConfig(newConfig);
+    if (window.electronAPI?.setNetworkStorageConfig) {
+      await window.electronAPI.setNetworkStorageConfig(newConfig);
+    }
+    await handleManualNetworkSync();
+  };
 
   // Handlers
   const handleUpdateSet = async (
@@ -1083,8 +1176,12 @@ export default function App() {
         totalPositions={totalPositionsCount}
         activeSetsCount={sets.length}
         currentUser={currentUser}
+        networkConfig={networkConfig}
         onOpenLogin={() => setShowLoginModal(true)}
         onOpenTutorial={() => setShowTutorialModal(true)}
+        onOpenNetworkSync={() => setShowNetworkSyncModal(true)}
+        onOpenUpdateModal={() => setShowUpdateModal(true)}
+        onOpenChangelog={() => setShowChangelogModal(true)}
       />
 
       <main className="flex-1 w-full max-w-full px-4 sm:px-6 lg:px-8 py-6">
@@ -1263,6 +1360,46 @@ export default function App() {
           setSelectedSetId(null);
         }}
       />
+
+      {/* Network Storage & Multi-User Sync Modal */}
+      {showNetworkSyncModal && (
+        <NetworkSyncModal
+          config={networkConfig}
+          onSaveConfig={handleSaveNetworkConfig}
+          onManualSync={handleManualNetworkSync}
+          onClose={() => setShowNetworkSyncModal(false)}
+          isSyncing={isSyncingNetwork}
+          lastSyncedAt={networkConfig.lastSyncedAt}
+        />
+      )}
+
+      {/* Software Auto-Update Animated Modal */}
+      {showUpdateModal && (
+        <UpdateModal
+          release={currentRelease}
+          onComplete={async () => {
+            await loadData();
+            setShowUpdateModal(false);
+            setShowChangelogModal(true);
+          }}
+          onClose={() => setShowUpdateModal(false)}
+          onViewChangelog={() => {
+            setShowUpdateModal(false);
+            setShowChangelogModal(true);
+          }}
+        />
+      )}
+
+      {/* Version Changelog & Release History Modal */}
+      {showChangelogModal && (
+        <ChangelogModal
+          onClose={() => setShowChangelogModal(false)}
+          onCheckUpdate={() => {
+            setShowChangelogModal(false);
+            setShowUpdateModal(true);
+          }}
+        />
+      )}
     </div>
   );
 }

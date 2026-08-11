@@ -154,6 +154,27 @@ export interface Personnel {
   password?: string;
 }
 
+export interface NetworkStorageConfig {
+  mode: 'LOCAL' | 'NETWORK';
+  networkPath: string;
+  stationName: string;
+  autoSyncIntervalSec: number;
+  lastSyncedAt?: string;
+  isOnline: boolean;
+}
+
+export interface UpdateRelease {
+  version: string;
+  releaseDate: string;
+  isCritical: boolean;
+  downloadSizeMb: number;
+  summary: string;
+  changes: {
+    category: 'FEATURE' | 'ENHANCEMENT' | 'SECURITY' | 'FIX';
+    description: string;
+  }[];
+}
+
 declare global {
   interface Window {
     electronAPI?: {
@@ -166,6 +187,9 @@ declare global {
       dbAction: (table: string, action: string, args: any[]) => Promise<any>;
       factoryReset: (setCount: number) => Promise<{ success: boolean; error?: string }>;
       getDbStatus: () => Promise<{ success: boolean; error: string | null }>;
+      getNetworkStorageConfig?: () => Promise<NetworkStorageConfig>;
+      setNetworkStorageConfig?: (config: NetworkStorageConfig) => Promise<{ success: boolean; error?: string }>;
+      checkForUpdates?: () => Promise<{ hasUpdate: boolean; release?: UpdateRelease }>;
     };
   }
 }

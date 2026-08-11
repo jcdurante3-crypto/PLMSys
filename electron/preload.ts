@@ -10,6 +10,9 @@ export interface ElectronAPI {
   dbAction: (table: string, action: string, args: any[]) => Promise<any>;
   factoryReset: (setCount: number) => Promise<{ success: boolean; error?: string }>;
   getDbStatus: () => Promise<{ success: boolean; error: string | null }>;
+  getNetworkStorageConfig: () => Promise<any>;
+  setNetworkStorageConfig: (config: any) => Promise<any>;
+  checkForUpdates: () => Promise<any>;
 }
 
 const electronAPI: ElectronAPI = {
@@ -22,6 +25,9 @@ const electronAPI: ElectronAPI = {
   dbAction: (table, action, args) => ipcRenderer.invoke('db-action', { table, action, args }),
   factoryReset: (setCount) => ipcRenderer.invoke('factory-reset', { setCount }),
   getDbStatus: () => ipcRenderer.invoke('get-db-status'),
+  getNetworkStorageConfig: () => ipcRenderer.invoke('get-network-config'),
+  setNetworkStorageConfig: (config) => ipcRenderer.invoke('set-network-config', config),
+  checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
 };
 
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);

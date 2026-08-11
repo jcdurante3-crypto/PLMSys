@@ -1,6 +1,6 @@
 import React from 'react';
-import { Layers, Activity, Search, FileText, Sliders, User, Shield, HelpCircle } from 'lucide-react';
-import { User as UserType } from '../types';
+import { Layers, Activity, Search, FileText, Sliders, User, Shield, HelpCircle, Share2, Sparkles } from 'lucide-react';
+import { User as UserType, NetworkStorageConfig } from '../types';
 
 interface NavbarProps {
   activeTab: 'dashboard' | 'manage-set' | 'production' | 'search' | 'audit' | 'admin';
@@ -8,8 +8,12 @@ interface NavbarProps {
   totalPositions: number;
   activeSetsCount: number;
   currentUser: UserType;
+  networkConfig?: NetworkStorageConfig;
   onOpenLogin: () => void;
   onOpenTutorial: () => void;
+  onOpenNetworkSync: () => void;
+  onOpenUpdateModal: () => void;
+  onOpenChangelog: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -18,13 +22,19 @@ export const Navbar: React.FC<NavbarProps> = ({
   totalPositions,
   activeSetsCount,
   currentUser,
+  networkConfig,
   onOpenLogin,
   onOpenTutorial,
+  onOpenNetworkSync,
+  onOpenUpdateModal,
+  onOpenChangelog,
 }) => {
   const isRedundantRole =
     (currentUser.name.toLowerCase() === 'operator' && currentUser.role === 'OPERATOR') ||
     (currentUser.name.toLowerCase().includes('admin') && currentUser.role === 'ADMIN') ||
     currentUser.name.toUpperCase() === currentUser.role.toUpperCase();
+
+  const isNetworkMode = networkConfig?.mode === 'NETWORK';
 
   return (
     <header className="bg-[#0F1117] text-[#E0E2E5] shadow-lg border-b border-[#1E222A] sticky top-0 z-40">
@@ -39,7 +49,10 @@ export const Navbar: React.FC<NavbarProps> = ({
               <h1 className="text-sm sm:text-base font-bold tracking-tight uppercase text-white leading-none">
                 Plate Lifecycle Monitoring System
               </h1>
-              <span className="text-[10px] text-[#F27D26] font-semibold tracking-wider block mt-0.5">PLM SYSTEM</span>
+              <div className="flex items-center gap-2 mt-0.5">
+                <span className="text-[10px] text-[#F27D26] font-semibold tracking-wider block">PLM SYSTEM</span>
+                <span className="text-[9px] px-1.5 py-0.2 bg-[#1E222A] text-emerald-400 font-mono rounded font-bold border border-emerald-500/20">v2.4.0</span>
+              </div>
             </div>
           </div>
 
@@ -117,7 +130,34 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {/* Action Buttons */}
           <div className="flex items-center space-x-2">
-            <div className="flex items-center gap-2 text-xs text-[#8E9299] px-3">
+            {/* Network Storage Status Badge */}
+            <button
+              onClick={onOpenNetworkSync}
+              title="Configure Network Storage & Multi-User Sync"
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all border ${
+                isNetworkMode
+                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20'
+                  : 'bg-[#191D28] text-[#8E9299] hover:text-white border-[#1E222A]'
+              }`}
+            >
+              <Share2 className="w-3.5 h-3.5 shrink-0" />
+              <span className="hidden lg:inline">
+                {isNetworkMode ? 'LAN Sync Active' : 'Local Storage'}
+              </span>
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            </button>
+
+            {/* Auto-Update & Changelog Pill */}
+            <button
+              onClick={onOpenUpdateModal}
+              title="Software Update System & Version Log"
+              className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-[#F27D26]/10 text-[#F27D26] hover:bg-[#F27D26]/20 border border-[#F27D26]/30 flex items-center gap-1.5 transition-all"
+            >
+              <Sparkles className="w-3.5 h-3.5 shrink-0" />
+              <span className="hidden lg:inline">v2.4.0 Live</span>
+            </button>
+
+            <div className="flex items-center gap-2 text-xs text-[#8E9299] px-2">
               <span className="font-semibold text-white">{currentUser.name}</span>
               {!isRedundantRole && (
                 <span className="bg-[#191D28] px-2 py-0.5 rounded text-[10px] uppercase font-semibold border border-[#1E222A]">{currentUser.role}</span>

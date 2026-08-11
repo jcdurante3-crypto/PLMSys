@@ -909,6 +909,58 @@ ipcMain.handle('get-app-info', async () => {
   };
 });
 
+const networkConfigFile = path.join(dirs.settings, 'network.json');
+
+ipcMain.handle('get-network-config', async () => {
+  try {
+    if (fs.existsSync(networkConfigFile)) {
+      const data = fs.readFileSync(networkConfigFile, 'utf8');
+      return JSON.parse(data);
+    }
+  } catch (err) {
+    logToFile('warn', `Failed to read network config: ${err}`);
+  }
+  return {
+    mode: 'LOCAL',
+    networkPath: path.join(dirs.root, 'network_shared'),
+    stationName: 'PC-01 (Main Terminal)',
+    autoSyncIntervalSec: 3,
+    isOnline: true,
+  };
+});
+
+ipcMain.handle('set-network-config', async (event, config) => {
+  try {
+    fs.writeFileSync(networkConfigFile, JSON.stringify(config, null, 2), 'utf8');
+    logToFile('info', `Network storage config updated: mode=${config.mode}, station=${config.stationName}`);
+    return { success: true };
+  } catch (err: any) {
+    logToFile('error', `Failed to write network config: ${err.message}`);
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('check-for-updates', async () => {
+  logToFile('info', 'IPC check-for-updates triggered');
+  return {
+    hasUpdate: true,
+    release: {
+      version: '2.4.0',
+      releaseDate: '2026-08-11',
+      isCritical: false,
+      downloadSizeMb: 28.4,
+      summary: 'Major Release: Multi-Platform Network Storage Real-Time Sync & Automated Update Engine',
+      changes: [
+        { category: 'FEATURE', description: 'Multi-User Local Network Storage Sync with real-time peer station detection across PC1 & PC2.' },
+        { category: 'FEATURE', description: 'Automated Software Update System featuring real-time percentage countdowns & animated installation pipeline.' },
+        { category: 'ENHANCEMENT', description: 'Interactive Release Notes & Categorized Version Changelog Viewer.' },
+        { category: 'ENHANCEMENT', description: 'Contextual Plate Replacement Confirmation View with Outgoing vs Incoming Specs.' },
+        { category: 'SECURITY', description: 'Station ID metadata attached directly to physical audit records.' }
+      ]
+    }
+  };
+});
+
 app.whenReady().then(() => {
   createWindow();
 
