@@ -179,9 +179,18 @@ function validateDb(parsed: any): boolean {
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
     return false;
   }
+  // Auto-normalize legacy/exported alias keys
+  if (Array.isArray(parsed.installations) && (!parsed.plateInstallations || !Array.isArray(parsed.plateInstallations))) {
+    parsed.plateInstallations = parsed.installations;
+  }
+  if (Array.isArray(parsed.removals) && (!parsed.plateRemovals || !Array.isArray(parsed.plateRemovals))) {
+    parsed.plateRemovals = parsed.removals;
+  }
+
+  // Ensure mandatory collections exist as arrays or initialize them if empty
   for (const table of ALLOWED_TABLES) {
     if (!parsed[table] || !Array.isArray(parsed[table])) {
-      return false;
+      parsed[table] = [];
     }
   }
   return true;
@@ -547,9 +556,16 @@ function createWindow() {
     ? path.join(__dirname, 'preload.cjs')
     : path.join(appPath, 'dist-electron', 'preload.cjs');
 
+  const iconPath = fs.existsSync(path.join(appPath, 'assets', 'icon.png'))
+    ? path.join(appPath, 'assets', 'icon.png')
+    : fs.existsSync(path.join(appPath, 'public', 'icon.png'))
+      ? path.join(appPath, 'public', 'icon.png')
+      : path.join(__dirname, '..', 'public', 'icon.png');
+
   const mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
+    icon: iconPath,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,

@@ -2,6 +2,7 @@
   "name": "react-example",
   "private": true,
   "version": "1.0.0",
+  "author": "J. Durante",
   "type": "module",
   "main": "dist-electron/main.cjs",
   "scripts": {
@@ -42,22 +43,28 @@
   },
   "build": {
     "appId": "com.plm.system",
-    "productName": "Plate Lifecycle Management System",
+    "productName": "Plate Lifecycle Monitoring System",
+    "icon": "assets/icon.png",
     "directories": {
       "output": "release"
     },
     "files": [
       "dist/**/*",
-      "dist-electron/**/*"
+      "dist-electron/**/*",
+      "assets/**/*",
+      "public/**/*"
     ],
     "win": {
-      "target": ["nsis", "portable"]
+      "target": ["portable"],
+      "icon": "assets/icon.ico"
     },
     "mac": {
-      "target": ["dmg"]
+      "target": ["dmg"],
+      "icon": "assets/icon.png"
     },
     "linux": {
-      "target": ["AppImage"]
+      "target": ["AppImage"],
+      "icon": "assets/icon.png"
     }
   }
 }

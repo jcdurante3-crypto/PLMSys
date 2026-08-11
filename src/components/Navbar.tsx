@@ -32,11 +32,14 @@ export const Navbar: React.FC<NavbarProps> = ({
         <div className="flex items-center justify-between h-16">
           {/* Logo & Title */}
           <div className="flex items-center space-x-3">
-            <div className="bg-[#F27D26] p-2 rounded-lg text-white shadow-md flex items-center justify-center">
-              <Layers className="w-6 h-6" />
+            <div className="bg-[#F27D26] p-2 rounded-lg text-white shadow-md flex items-center justify-center shrink-0">
+              <Layers className="w-5 h-5" />
             </div>
             <div>
-              <h1 className="text-lg font-bold tracking-tight uppercase text-white">PLM System</h1>
+              <h1 className="text-sm sm:text-base font-bold tracking-tight uppercase text-white leading-none">
+                Plate Lifecycle Monitoring System
+              </h1>
+              <span className="text-[10px] text-[#F27D26] font-semibold tracking-wider block mt-0.5">PLM SYSTEM</span>
             </div>
           </div>
 

@@ -95,7 +95,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExportBackup, 
                   <input 
                     type="file" 
                     ref={fileInputRef} 
-                    onChange={onImportBackup} 
+                    onChange={async (e) => {
+                      try {
+                        await onImportBackup(e);
+                      } finally {
+                        if (e.target) e.target.value = '';
+                      }
+                    }} 
                     accept=".json" 
                     className="hidden" 
                   />
@@ -120,6 +126,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExportBackup, 
                     onClick={() => {
                       setRestoreSuccess(false);
                       setRestoreError('');
+                      setConfirmationText('');
                       setShowRestoreModal(true);
                     }}
                     className="flex items-center gap-2 px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-sm font-bold transition-all shadow-lg shadow-rose-500/20 cursor-pointer"

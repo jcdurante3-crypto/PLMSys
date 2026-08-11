@@ -394,7 +394,7 @@ export const SetDetail: React.FC<SetDetailProps> = ({
                 <div className="p-3 bg-[#191D28] border border-amber-500/30 rounded-xl flex flex-col gap-3 shadow-inner">
                   <div className="flex items-start gap-2 text-amber-400 text-xs">
                     <Lock className="w-4 h-4 shrink-0 mt-0.5" />
-                    <span className="font-medium leading-relaxed">Password required. Authorized person must sign off on details.</span>
+                    <span className="font-medium leading-relaxed">Password Required.</span>
                   </div>
                   <button
                     type="button"
@@ -589,7 +589,7 @@ export const SetDetail: React.FC<SetDetailProps> = ({
             <div className="flex items-center justify-between border-b border-[#1E222A] pb-3">
               <div className="flex items-center gap-2">
                 <ShieldCheck className="w-5 h-5 text-[#F27D26]" />
-                <h3 className="text-base font-bold text-white">Supervisor Authorization</h3>
+                <h3 className="text-base font-bold text-white">Authorization</h3>
               </div>
               <button
                 type="button"

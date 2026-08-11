@@ -122,7 +122,7 @@ export default function App() {
         try {
           const res = await window.electronAPI.getDbStatus();
           if (!res.success && res.error) {
-            alert('DATABASE RESTORATION WARNING:\n\n' + res.error);
+            console.warn('DATABASE RESTORATION WARNING:', res.error);
           }
         } catch (e) {
           console.error('Failed to get database status:', e);
@@ -847,12 +847,16 @@ export default function App() {
   };
 
   const handleExportBackup = async () => {
+    const insts = await db.plateInstallations.toArray();
+    const rems = await db.plateRemovals.toArray();
     const backupData = {
       sets: await db.sets.toArray(),
       positions: await db.positions.toArray(),
       plates: await db.plates.toArray(),
-      installations: await db.plateInstallations.toArray(),
-      removals: await db.plateRemovals.toArray(),
+      plateInstallations: insts,
+      installations: insts,
+      plateRemovals: rems,
+      removals: rems,
       dailyProduction: await db.dailyProduction.toArray(),
       replacements: await db.replacements.toArray(),
       jobOrders: await db.jobOrders.toArray(),
@@ -892,12 +896,16 @@ export default function App() {
         await window.electronAPI.writeLog('info', 'Starting database restore via native open dialog...');
         
         // Safety Auto-Backup before overwrite
+        const currentInsts = await db.plateInstallations.toArray();
+        const currentRems = await db.plateRemovals.toArray();
         const currentData = {
           sets: await db.sets.toArray(),
           positions: await db.positions.toArray(),
           plates: await db.plates.toArray(),
-          installations: await db.plateInstallations.toArray(),
-          removals: await db.plateRemovals.toArray(),
+          plateInstallations: currentInsts,
+          installations: currentInsts,
+          plateRemovals: currentRems,
+          removals: currentRems,
           dailyProduction: await db.dailyProduction.toArray(),
           replacements: await db.replacements.toArray(),
           jobOrders: await db.jobOrders.toArray(),
@@ -910,6 +918,8 @@ export default function App() {
         const res = await window.electronAPI.loadBackup();
         if (res.success && res.data) {
           const json = JSON.parse(res.data);
+          const instData = json.plateInstallations || json.installations || [];
+          const remData = json.plateRemovals || json.removals || [];
           
           await db.transaction('rw', [
             db.sets,
@@ -937,8 +947,8 @@ export default function App() {
             if (json.sets?.length) await db.sets.bulkPut(json.sets);
             if (json.positions?.length) await db.positions.bulkPut(json.positions);
             if (json.plates?.length) await db.plates.bulkPut(json.plates);
-            if (json.installations?.length) await db.plateInstallations.bulkPut(json.installations);
-            if (json.removals?.length) await db.plateRemovals.bulkPut(json.removals);
+            if (instData.length) await db.plateInstallations.bulkPut(instData);
+            if (remData.length) await db.plateRemovals.bulkPut(remData);
             if (json.dailyProduction?.length) await db.dailyProduction.bulkPut(json.dailyProduction);
             if (json.replacements?.length) await db.replacements.bulkPut(json.replacements);
             if (json.jobOrders?.length) await db.jobOrders.bulkPut(json.jobOrders);
@@ -970,7 +980,9 @@ export default function App() {
     reader.onload = async (e) => {
       try {
         const json = JSON.parse(e.target?.result as string);
-        if (json.sets && json.positions) {
+        const instData = json.plateInstallations || json.installations || [];
+        const remData = json.plateRemovals || json.removals || [];
+        if (json.sets || json.positions) {
           await db.sets.clear();
           await db.positions.clear();
           await db.plates.clear();
@@ -982,11 +994,11 @@ export default function App() {
           await db.auditLogs.clear();
           await db.personnel.clear();
 
-          if (json.sets.length) await db.sets.bulkPut(json.sets);
-          if (json.positions.length) await db.positions.bulkPut(json.positions);
-          if (json.plates.length) await db.plates.bulkPut(json.plates);
-          if (json.installations?.length) await db.plateInstallations.bulkPut(json.installations);
-          if (json.removals?.length) await db.plateRemovals.bulkPut(json.removals);
+          if (json.sets?.length) await db.sets.bulkPut(json.sets);
+          if (json.positions?.length) await db.positions.bulkPut(json.positions);
+          if (json.plates?.length) await db.plates.bulkPut(json.plates);
+          if (instData.length) await db.plateInstallations.bulkPut(instData);
+          if (remData.length) await db.plateRemovals.bulkPut(remData);
           if (json.dailyProduction?.length) await db.dailyProduction.bulkPut(json.dailyProduction);
           if (json.replacements?.length) await db.replacements.bulkPut(json.replacements);
           if (json.jobOrders?.length) await db.jobOrders.bulkPut(json.jobOrders);
@@ -1051,7 +1063,7 @@ export default function App() {
       <div className="min-h-screen bg-slate-950 flex items-center justify-center text-white">
         <div className="flex flex-col items-center gap-3">
           <div className="w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" />
-          <div className="text-sm font-medium text-slate-300">Loading Plate Lifecycle Management System...</div>
+          <div className="text-sm font-medium text-slate-300">Loading Plate Lifecycle Monitoring System...</div>
         </div>
       </div>
     );
@@ -1061,7 +1073,7 @@ export default function App() {
   const totalPositionsCount = sets.length * 11;
 
   return (
-    <div className="min-h-screen bg-[#0A0B0E] text-[#E0E2E5] flex flex-col font-sans">
+    <div className="min-h-screen bg-gradient-to-br from-[#0A0B0E] via-[#12151C] to-[#0A0B0E] bg-[length:400%_400%] animate-gradient-x text-[#E0E2E5] flex flex-col font-sans">
       <Navbar
         activeTab={activeTab}
         setActiveTab={(tab) => {

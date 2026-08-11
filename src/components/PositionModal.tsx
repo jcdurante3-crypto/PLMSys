@@ -605,42 +605,87 @@ export const PositionModal: React.FC<PositionModalProps> = ({
               )}
 
               {showConfirmReplace && (
-                <div className="bg-[#191D28] border border-[#F27D26] p-4 rounded-xl text-center space-y-3 animate-fadeIn">
-                  <p className="text-white text-sm font-semibold">Confirm plate replacement and save history record?</p>
-                  <div className="flex justify-center gap-3">
+                <div className="bg-[#141822] border border-[#F27D26]/60 p-4 sm:p-5 rounded-xl space-y-4 animate-fadeIn shadow-2xl">
+                  <div className="flex items-center gap-3 border-b border-[#1E222A] pb-3">
+                    <div className="p-2 bg-[#F27D26]/10 rounded-lg text-[#F27D26]">
+                      <ArrowRight className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold text-white">Confirm Plate Replacement & Lifecycle Log</h4>
+                      <p className="text-xs text-[#8E9299]">Verify the details below before archiving the current plate and installing the new one.</p>
+                    </div>
+                  </div>
+
+                  {/* Summary Comparison */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                    {/* Outgoing Plate */}
+                    <div className="bg-[#191D28] p-3 rounded-lg border border-[#1E222A] space-y-1.5">
+                      <div className="text-[10px] font-bold text-rose-400 uppercase tracking-wider">Outgoing Plate (Removing)</div>
+                      <div className="font-mono font-bold text-white text-sm">{currentPlate?.serialNumber}</div>
+                      <div className="flex justify-between text-[#8E9299]">
+                        <span>Lifetime Cycles:</span>
+                        <span className="font-mono font-semibold text-white">{plateLife.toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between text-[#8E9299]">
+                        <span>Disposition:</span>
+                        <span className={`font-semibold ${evaluationStatus === 'REJECTED' ? 'text-rose-400' : 'text-amber-400'}`}>
+                          {evaluationStatus}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Incoming Plate */}
+                    <div className="bg-[#191D28] p-3 rounded-lg border border-[#1E222A] space-y-1.5">
+                      <div className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">Incoming Plate (Installing)</div>
+                      <div className="font-mono font-bold text-white text-sm">{generatedSerial}</div>
+                      <div className="flex justify-between text-[#8E9299]">
+                        <span>Install Date:</span>
+                        <span className="font-semibold text-white">{replaceInstallDate}</span>
+                      </div>
+                      <div className="flex justify-between text-[#8E9299]">
+                        <span>Operator:</span>
+                        <span className="font-semibold text-white truncate max-w-[110px]">{operatorId || 'Unassigned'}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-3 pt-2 border-t border-[#1E222A]">
                     <button
                       type="button"
                       onClick={() => setShowConfirmReplace(false)}
-                      className="px-4 py-1.5 rounded-lg bg-[#2D333E] hover:bg-[#3b4351] text-[#E0E2E5] text-xs font-semibold"
+                      className="px-4 py-2 rounded-lg bg-[#191D28] hover:bg-[#2D333E] text-[#8E9299] hover:text-white text-xs font-semibold border border-[#1E222A] transition-colors"
                     >
-                      Cancel
+                      Back to Edit
                     </button>
                     <button
                       type="button"
                       onClick={executeReplace}
-                      className="px-4 py-1.5 rounded-lg bg-[#F27D26] hover:bg-[#d96a1f] text-white text-xs font-semibold"
+                      className="px-5 py-2 rounded-lg bg-[#F27D26] hover:bg-[#d96a1f] text-white text-xs font-bold shadow-lg shadow-[#F27D26]/20 transition-all flex items-center gap-1.5 cursor-pointer"
                     >
-                      Confirm Replacement
+                      <CheckCircle className="w-4 h-4" />
+                      Confirm & Execute Replacement
                     </button>
                   </div>
                 </div>
               )}
 
-              <div className="flex justify-end gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="px-4 py-2 rounded-lg bg-[#191D28] hover:bg-[#2D333E] text-[#8E9299] text-sm font-medium border border-[#1E222A]"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 rounded-lg bg-[#F27D26] hover:bg-[#d96a1f] text-white text-sm font-semibold shadow-md cursor-pointer"
-                >
-                  Execute Replacement & Log History Record
-                </button>
-              </div>
+              {!showConfirmReplace && (
+                <div className="flex justify-end gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="px-4 py-2 rounded-lg bg-[#191D28] hover:bg-[#2D333E] text-[#8E9299] text-sm font-medium border border-[#1E222A]"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 rounded-lg bg-[#F27D26] hover:bg-[#d96a1f] text-white text-sm font-semibold shadow-md cursor-pointer"
+                  >
+                    Execute Replacement & Log History Record
+                  </button>
+                </div>
+              )}
             </form>
           )}
 
@@ -750,15 +795,17 @@ export const PositionModal: React.FC<PositionModalProps> = ({
                           </div>
                         </div>
 
-                        <div className="mt-4 pt-3 border-t border-[#1E222A]/50 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-[#8E9299]">
-                          <div>
-                            <span>Operator: </span>
-                            <strong className="text-white font-mono">{inst.operatorId}</strong>
+                        <div className="mt-4 pt-3 border-t border-[#1E222A]/50 space-y-2 text-xs text-[#8E9299]">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                              <span>Operator: </span>
+                              <strong className="text-white font-mono">{inst.operatorId}</strong>
+                            </div>
                           </div>
                           {inst.remarks && (
-                            <div>
-                              <span>Remarks: </span>
-                              <strong className="text-white italic">{inst.remarks}</strong>
+                            <div className="w-full bg-[#0F1117] p-2.5 rounded-lg border border-[#1E222A] text-white">
+                              <span className="text-[#8E9299] text-[11px] block font-semibold uppercase mb-0.5">Remarks / Notes:</span>
+                              <div className="text-xs italic text-slate-200 break-words whitespace-pre-wrap">{inst.remarks}</div>
                             </div>
                           )}
                         </div>
