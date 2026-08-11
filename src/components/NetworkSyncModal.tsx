@@ -49,18 +49,41 @@ export const NetworkSyncModal: React.FC<NetworkSyncModalProps> = ({
   const handleTestConnection = async () => {
     setIsTesting(true);
     setTestResult(null);
-    await new Promise((r) => setTimeout(r, 800));
-    setIsTesting(false);
-    if (networkPath.trim().length > 3) {
-      setTestResult({
-        success: true,
-        message: `Successfully reached network path. 3 peer nodes detected.`
-      });
-    } else {
+    try {
+      if (window.electronAPI?.testNetworkConnection) {
+        const res = await window.electronAPI.testNetworkConnection({ networkPath });
+        if (res.success) {
+          setTestResult({
+            success: true,
+            message: 'Successfully reached shared network directory and verified read/write permissions.'
+          });
+        } else {
+          setTestResult({
+            success: false,
+            message: res.error || 'Failed to connect to network storage path.'
+          });
+        }
+      } else {
+        await new Promise((r) => setTimeout(r, 600));
+        if (networkPath.trim().length > 3) {
+          setTestResult({
+            success: true,
+            message: 'Successfully reached network path (Browser Preview mode).'
+          });
+        } else {
+          setTestResult({
+            success: false,
+            message: 'Invalid network folder path.'
+          });
+        }
+      }
+    } catch (err: any) {
       setTestResult({
         success: false,
-        message: `Invalid network folder or UNC path provided.`
+        message: err.message || 'Connection test failed.'
       });
+    } finally {
+      setIsTesting(false);
     }
   };
 

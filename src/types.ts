@@ -183,13 +183,19 @@ declare global {
       saveBackup: (backupDataText: string) => Promise<{ success: boolean; filePath?: string; cancelled?: boolean; error?: string }>;
       loadBackup: () => Promise<{ success: boolean; data?: string; cancelled?: boolean; error?: string }>;
       writeLog: (level: string, message: string) => Promise<void>;
-      getAppInfo: () => Promise<{ isPackaged: boolean; version: string; dataDirectory: string }>;
+      getAppInfo: () => Promise<{ isPackaged: boolean; version: string; dataDirectory: string; mode?: string; stationName?: string }>;
       dbAction: (table: string, action: string, args: any[]) => Promise<any>;
       factoryReset: (setCount: number) => Promise<{ success: boolean; error?: string }>;
-      getDbStatus: () => Promise<{ success: boolean; error: string | null }>;
+      getDbStatus: () => Promise<{ success: boolean; error: string | null; isOffline?: boolean; details?: any }>;
       getNetworkStorageConfig?: () => Promise<NetworkStorageConfig>;
       setNetworkStorageConfig?: (config: NetworkStorageConfig) => Promise<{ success: boolean; error?: string }>;
-      checkForUpdates?: () => Promise<{ hasUpdate: boolean; release?: UpdateRelease }>;
+      testNetworkConnection?: (args: { networkPath: string }) => Promise<{ success: boolean; error?: string }>;
+      migrateStorageMode?: (args: { targetMode: 'LOCAL' | 'NETWORK'; networkPath?: string; stationName?: string; overwriteChoice?: string }) => Promise<{ success: boolean; conflict?: boolean; message?: string }>;
+      authenticateUser?: (args: { userId: string; password?: string }) => Promise<{ success: boolean; user?: Personnel; error?: string }>;
+      getPersonnelList?: () => Promise<Personnel[]>;
+      atomicCreateSet?: (args: { setCount: number; initialCycle?: number; operatorId?: string }) => Promise<{ success: boolean }>;
+      atomicDeleteSet?: (args: { setId: string; operatorId?: string }) => Promise<{ success: boolean }>;
+      checkForUpdates?: () => Promise<{ hasUpdate: boolean; release?: UpdateRelease; offline?: boolean; currentVersion?: string }>;
     };
   }
 }
