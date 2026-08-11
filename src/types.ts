@@ -123,6 +123,7 @@ export interface AuditRecord {
     | 'ADD_PRODUCTION'
     | 'EDIT_PRODUCTION'
     | 'DELETE_PRODUCTION'
+    | 'UNDO_PRODUCTION'
     | 'CORRECT_RECORD'
     | 'BACKUP'
     | 'RESTORE'

@@ -42,10 +42,10 @@
     "wait-on": "^8.0.2"
   },
   "optionalDependencies": {
-    "@esbuild/win32-x64": "^0.25.0",
-    "@rollup/rollup-win32-x64-msvc": "^4.34.9",
-    "@tailwindcss/oxide-win32-x64-msvc": "^4.1.14",
-    "lightningcss-win32-x64-msvc": "^1.29.2"
+    "@esbuild/win32-x64": "0.25.12",
+    "@rollup/rollup-win32-x64-msvc": "4.62.4",
+    "@tailwindcss/oxide-win32-x64-msvc": "4.3.3",
+    "lightningcss-win32-x64-msvc": "1.32.0"
   },
   "build": {
     "appId": "com.plm.system",

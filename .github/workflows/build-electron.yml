@@ -23,12 +23,11 @@ jobs:
         with:
           node-version: 20
 
-      - name: Clean & install dependencies
+      - name: Install dependencies
         shell: bash
         run: |
           npm cache clean --force
-          npm install --include=optional
-          npm install --no-save lightningcss-win32-x64-msvc @rollup/rollup-win32-x64-msvc @tailwindcss/oxide-win32-x64-msvc @esbuild/win32-x64
+          npm ci
 
       - name: Build Electron App
         shell: bash

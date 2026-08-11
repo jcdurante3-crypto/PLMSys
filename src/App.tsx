@@ -34,7 +34,7 @@ import { NetworkSyncModal } from './components/NetworkSyncModal';
 import { UpdateModal } from './components/UpdateModal';
 import { ChangelogModal } from './components/ChangelogModal';
 import { useAutoBackup } from './hooks/useAutoBackup';
-import { Shield } from 'lucide-react';
+import { Shield, RotateCcw, X, Clock } from 'lucide-react';
 import { NetworkStorageConfig, UpdateRelease } from './types';
 
 export default function App() {
@@ -48,6 +48,12 @@ export default function App() {
   const [replacements, setReplacements] = useState<ReplacementRecord[]>([]);
   const [jobOrders, setJobOrders] = useState<JobOrderRecord[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditRecord[]>([]);
+
+  const [undoableBatch, setUndoableBatch] = useState<{
+    ids: string[];
+    timestamp: number;
+    description: string;
+  } | null>(null);
 
   const [activeTab, setActiveTab] = useState<'dashboard' | 'manage-set' | 'production' | 'search' | 'audit' | 'admin'>('dashboard');
   const [selectedSetId, setSelectedSetId] = useState<string | null>(null);
@@ -321,8 +327,9 @@ export default function App() {
     });
 
     // Create daily production record
+    const newProdId = generateUUID();
     const newProdRecord: DailyProductionRecord = {
-      id: generateUUID(),
+      id: newProdId,
       setId,
       date: todayStr,
       jobOrderId,
@@ -335,6 +342,12 @@ export default function App() {
       createdAt: new Date().toISOString(),
     };
     await db.dailyProduction.put(newProdRecord);
+
+    setUndoableBatch({
+      ids: [newProdId],
+      timestamp: Date.now(),
+      description: `Added +${cycles.toLocaleString()} cycles to ${targetSet.displayName} (JO: ${jobOrderId})`
+    });
 
     // Audit log
     const auditCode = `AUD-${String(auditLogs.length + 1).padStart(6, '0')}`;
@@ -372,6 +385,8 @@ export default function App() {
 
     const todayStr = new Date().toISOString().split('T')[0];
 
+    const createdIds: string[] = [];
+
     for (const targetSet of targetSets) {
       const prevCycle = targetSet.currentTotalCycle;
       const newCycle = prevCycle + cycles;
@@ -383,8 +398,11 @@ export default function App() {
         updatedAt: new Date().toISOString(),
       });
 
+      const newProdId = generateUUID();
+      createdIds.push(newProdId);
+
       const newProdRecord: DailyProductionRecord = {
-        id: generateUUID(),
+        id: newProdId,
         setId: targetSet.id,
         date: todayStr,
         jobOrderId: jobOrderNumber,
@@ -398,6 +416,12 @@ export default function App() {
       };
       await db.dailyProduction.put(newProdRecord);
     }
+
+    setUndoableBatch({
+      ids: createdIds,
+      timestamp: Date.now(),
+      description: `Added +${cycles.toLocaleString()} cycles to ${targetSets.length} set(s) [Set ${fromSetNum}–${toSetNum}] (JO: ${jobOrderNumber})`
+    });
 
     const auditCode = `AUD-${String(auditLogs.length + 1).padStart(6, '0')}`;
     await db.auditLogs.put({
@@ -413,6 +437,59 @@ export default function App() {
     });
 
     await loadData();
+  };
+
+  const handleUndoProductionBatch = async (prodIds: string[]) => {
+    try {
+      for (const prodId of prodIds) {
+        const prod = dailyProductions.find(p => p.id === prodId);
+        if (!prod) continue;
+
+        const targetSet = sets.find(s => s.id === prod.setId);
+
+        // 1. Delete from dailyProduction
+        await db.dailyProduction.delete(prodId);
+
+        // 2. Adjust Set current cycle counts if targetSet exists
+        if (targetSet) {
+          const prevCycle = targetSet.currentTotalCycle;
+          const newCycle = Math.max(0, prevCycle - prod.productionCycles);
+
+          const todayStr = new Date().toISOString().split('T')[0];
+          let newTodayProd = targetSet.todayProduction;
+          if (prod.date === todayStr) {
+            newTodayProd = Math.max(0, targetSet.todayProduction - prod.productionCycles);
+          }
+
+          await db.sets.update(prod.setId, {
+            currentTotalCycle: newCycle,
+            todayProduction: newTodayProd,
+            updatedAt: new Date().toISOString(),
+          });
+        }
+
+        // 3. Log Audit Record
+        const auditCode = `AUD-${String(auditLogs.length + 1).padStart(6, '0')}`;
+        await db.auditLogs.put({
+          id: generateUUID(),
+          auditCode,
+          user: currentUser.name,
+          action: 'UNDO_PRODUCTION',
+          timestamp: new Date().toISOString(),
+          recordId: prodId,
+          oldValue: `Set ID: ${prod.setId}, +${prod.productionCycles} cycles`,
+          newValue: 'REVERTED',
+          reason: `Quick undo of daily production entry within 10-second grace period (+${prod.productionCycles} cycles for JO: ${prod.jobOrderId || 'N/A'}).`,
+          deviceInfo: navigator.userAgent,
+        });
+      }
+
+      setUndoableBatch(null);
+      await loadData();
+    } catch (err) {
+      console.error('Failed to undo production batch:', err);
+      alert(`Error undoing production log: ${err instanceof Error ? err.message : String(err)}`);
+    }
   };
 
   const handleDeleteSet = async (setId: string) => {
@@ -1238,6 +1315,8 @@ export default function App() {
                 sets={sets}
                 jobOrders={jobOrders}
                 onOpenLogProduction={() => setShowLogProductionModal(true)}
+                undoableBatch={undoableBatch}
+                onUndoProductionBatch={handleUndoProductionBatch}
               />
             )}
             {activeTab === 'search' && (
@@ -1399,6 +1478,49 @@ export default function App() {
             setShowUpdateModal(true);
           }}
         />
+      )}
+
+      {/* Global Toast Notification for 10-second Undo */}
+      {undoableBatch && (Date.now() - undoableBatch.timestamp < 10000) && (
+        <div className="fixed bottom-6 right-6 z-50 bg-[#12151C] border border-amber-500/50 rounded-2xl p-4 shadow-2xl max-w-md w-full text-white flex flex-col gap-2.5 backdrop-blur-md animate-fadeIn">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 bg-amber-500/20 text-amber-400 rounded-xl border border-amber-500/30 shrink-0">
+                <RotateCcw className="w-5 h-5 animate-pulse" />
+              </div>
+              <div>
+                <h4 className="text-xs font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                  Production Logged <span className="bg-amber-500 text-slate-950 px-1.5 py-0.2 rounded text-[10px] font-extrabold flex items-center gap-1"><Clock className="w-3 h-3" /> {Math.ceil((10000 - (Date.now() - undoableBatch.timestamp)) / 1000)}s</span>
+                </h4>
+                <p className="text-xs font-medium text-white mt-0.5">{undoableBatch.description}</p>
+              </div>
+            </div>
+            <button
+              onClick={() => setUndoableBatch(null)}
+              className="text-[#8E9299] hover:text-white p-1 rounded-lg shrink-0 cursor-pointer"
+              title="Dismiss"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="flex items-center justify-end gap-2 pt-1 border-t border-[#1E222A]">
+            <button
+              onClick={() => {
+                setActiveTab('production');
+              }}
+              className="px-3 py-1.5 bg-[#191D28] hover:bg-[#252A38] text-xs font-semibold text-[#8E9299] hover:text-white rounded-lg border border-[#1E222A] transition-colors cursor-pointer"
+            >
+              View in Log
+            </button>
+            <button
+              onClick={() => handleUndoProductionBatch(undoableBatch.ids)}
+              className="px-4 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold rounded-lg text-xs shadow-md transition-all cursor-pointer flex items-center gap-1.5"
+            >
+              <RotateCcw className="w-3.5 h-3.5" /> Undo Entry
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );
