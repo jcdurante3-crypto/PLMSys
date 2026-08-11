@@ -21,7 +21,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: 'npm'
 
       - name: Clean Cache & Install dependencies with npm ci
@@ -42,6 +42,10 @@ jobs:
           ELECTRON_BUILDER_ALLOW_UNRESOLVED_DEPENDENCIES: "true"
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: false
+          FORCE_COLOR: "1"
+          ELECTRON_CACHE: ${{ github.workspace }}/.cache/electron
+          ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.cache/electron-builder
+          NODE_OPTIONS: "--max-old-space-size=4096"
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
