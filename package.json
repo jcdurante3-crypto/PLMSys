@@ -1,5 +1,5 @@
 {
-  "name": "react-example",
+  "name": "plmsys",
   "private": true,
   "version": "1.0.0",
   "author": "J. Durante",
@@ -41,6 +41,12 @@
     "vite": "^6.2.3",
     "wait-on": "^8.0.2"
   },
+  "optionalDependencies": {
+    "@esbuild/win32-x64": "^0.25.0",
+    "@rollup/rollup-win32-x64-msvc": "^4.34.9",
+    "@tailwindcss/oxide-win32-x64-msvc": "^4.1.14",
+    "lightningcss-win32-x64-msvc": "^1.29.2"
+  },
   "build": {
     "appId": "com.plm.system",
     "productName": "Plate Lifecycle Monitoring System",
@@ -55,15 +61,28 @@
       "public/**/*"
     ],
     "win": {
-      "target": ["portable"],
-      "icon": "assets/icon.ico"
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.ico",
+      "artifactName": "PLMSys.exe",
+      "executableName": "PLMSys"
     },
     "mac": {
-      "target": ["dmg"],
+      "target": [
+        "dmg"
+      ],
       "icon": "assets/icon.png"
     },
     "linux": {
-      "target": ["AppImage"],
+      "target": [
+        "AppImage"
+      ],
       "icon": "assets/icon.png"
     }
   }
