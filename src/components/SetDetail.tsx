@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { SetRecord, PositionRecord, PlateRecord, JobOrderRecord, PlateInstallationRecord, DailyProductionRecord, Personnel } from '../types';
 import { ArrowLeft, Activity, Plus, Wrench, Trash2, RefreshCw, CheckCircle, AlertTriangle, ShieldCheck, Calendar, User, ChevronLeft, ChevronRight, Layers, Lock, X, AlertCircle } from 'lucide-react';
-import { formatJobOrder, isValidJobOrder } from '../utils';
+import { formatJobOrder, isValidJobOrder, getSetTodayProduction } from '../utils';
 
 interface SetDetailProps {
   setRecord: SetRecord;
@@ -285,7 +285,7 @@ export const SetDetail: React.FC<SetDetailProps> = ({
               </div>
               <div className="bg-[#191D28] p-3 rounded-xl border border-[#1E222A]">
                 <div className="text-[#8E9299] text-xs font-medium uppercase">Today's Production</div>
-                <div className="text-2xl sm:text-3xl font-bold text-sky-400 mt-1">+{setRecord.todayProduction.toLocaleString()}</div>
+                <div className="text-2xl sm:text-3xl font-bold text-sky-400 mt-1">+{getSetTodayProduction(setRecord).toLocaleString()}</div>
               </div>
               <div className="bg-[#191D28] p-3 rounded-xl border border-[#1E222A]">
                 <div className="text-[#8E9299] text-xs font-medium uppercase">Active Plates</div>

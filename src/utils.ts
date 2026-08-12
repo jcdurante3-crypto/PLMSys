@@ -15,3 +15,24 @@ export function formatJobOrder(val: string): string {
 export function isValidJobOrder(val: string): boolean {
   return /^\d{4}-\d{2}$/.test(val.trim());
 }
+
+/**
+ * Returns today's date string in local timezone format (YYYY-MM-DD)
+ */
+export function getTodayStr(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Calculates today's production for a set, resetting to 0 if the last production date is not today.
+ */
+export function getSetTodayProduction(set: { todayProduction?: number; lastProductionDate?: string }): number {
+  if (set.lastProductionDate !== getTodayStr()) {
+    return 0;
+  }
+  return set.todayProduction || 0;
+}

@@ -13,22 +13,47 @@
   }
 }
 
-/* Custom Scrollbar */
+/* Global Scrollbar Styles for PLMSys */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #2A2E3D #0F1117;
+}
+
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #0A0B0E;
+  background: #0F1117;
+  border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #2A2E37;
-  border-radius: 5px;
-  border: 2px solid #0A0B0E;
+  background: #2A2E3D;
+  border-radius: 4px;
+  border: 2px solid #0F1117;
+  transition: background-color 0.2s ease;
 }
 
 ::-webkit-scrollbar-thumb:hover {
   background: #F27D26;
+}
+
+::-webkit-scrollbar-corner {
+  background: #0F1117;
+}
+
+/* Text Wrapping for Long Remarks & Content */
+.break-words-all,
+.wrap-text {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: normal;
+}
+
+/* Prevent horizontal overflow in table cells and cards */
+td, th {
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }

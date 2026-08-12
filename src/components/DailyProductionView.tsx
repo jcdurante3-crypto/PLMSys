@@ -107,7 +107,7 @@ export const DailyProductionView: React.FC<DailyProductionViewProps> = ({
                     <td className="p-3 text-right font-mono font-extrabold text-white">{prod.currentTotalCycle.toLocaleString()}</td>
                     <td className="p-3 text-xs font-medium text-white">{prod.operatorId}</td>
                     <td className="p-3 text-xs text-[#8E9299]">{prod.checkedBy}</td>
-                    <td className="p-3 text-xs text-[#8E9299] max-w-xs truncate">{prod.remarks || '—'}</td>
+                    <td className="p-3 text-xs text-[#8E9299] max-w-xs break-words whitespace-normal">{prod.remarks || '—'}</td>
                   </tr>
                 );
               })}

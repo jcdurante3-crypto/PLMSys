@@ -310,7 +310,7 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ auditLogs, sets, pos
                       </td>
 
                       {/* Details / Values */}
-                      <td className="p-4 text-xs text-[#E0E2E5] max-w-sm">
+                      <td className="p-4 text-xs text-[#E0E2E5] max-w-sm break-words whitespace-normal">
                         <div className="space-y-1">
                           <div>{log.reason || 'No description provided.'}</div>
                           {(log.oldValue || log.newValue) && (

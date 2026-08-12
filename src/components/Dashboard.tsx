@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { SetRecord, PositionRecord, PlateRecord, PlateInstallationRecord, PlateRemovalRecord, User, Personnel } from '../types';
 import { Layers, Activity, Search, Plus, ArrowRight, Sliders, Edit2, Check, X, AlertCircle, CheckCircle2, Calendar, Archive, Clock, TrendingUp, BarChart2 } from 'lucide-react';
+import { getSetTodayProduction } from '../utils';
 
 interface DashboardProps {
   sets: SetRecord[];
@@ -40,7 +41,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const activePlatesCount = plates.filter(p => p.status === 'ACTIVE').length;
   const rejectedPlatesCount = plates.filter(p => p.status === 'REJECTED').length;
   const retiredPlatesCount = plates.filter(p => p.status === 'RETIRED').length;
-  const totalProductionToday = sets.reduce((sum, s) => sum + s.todayProduction, 0);
+  const totalProductionToday = sets.reduce((sum, s) => sum + getSetTodayProduction(s), 0);
 
   // 1. Average Lifespan of Rejected Plates
   const rejectedRemovals = removals.filter(r => r.status === 'REJECTED');

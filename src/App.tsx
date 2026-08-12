@@ -32,6 +32,7 @@ import { AdminDashboard } from './components/AdminDashboard';
 import { TutorialModal } from './components/TutorialModal';
 import { useAutoBackup } from './hooks/useAutoBackup';
 import { Shield } from 'lucide-react';
+import { getTodayStr, getSetTodayProduction } from './utils';
 
 export default function App() {
   const [loading, setLoading] = useState(true);
@@ -99,7 +100,16 @@ export default function App() {
       ]);
 
       sData.sort((a, b) => b.setNumber - a.setNumber);
-      setSets(sData);
+
+      const todayStr = getTodayStr();
+      const sanitizedSets = sData.map(s => {
+        if (s.lastProductionDate !== todayStr) {
+          return { ...s, todayProduction: 0 };
+        }
+        return s;
+      });
+
+      setSets(sanitizedSets);
       setPositions(pData);
       setPlates(plData);
       setInstallations(iData);
@@ -109,6 +119,13 @@ export default function App() {
       setJobOrders(joData);
       setAuditLogs(aData);
       setPersonnel(persData);
+
+      // Clean up stale todayProduction in database in background
+      sData.forEach(async (s) => {
+        if (s.lastProductionDate !== todayStr && s.todayProduction !== 0) {
+          await db.sets.update(s.id, { todayProduction: 0 });
+        }
+      });
     } catch (err) {
       console.error('Failed to load database:', err);
     } finally {
@@ -219,10 +236,14 @@ export default function App() {
     const prevCycle = targetSet.currentTotalCycle;
     const newCycle = prevCycle + cycles;
 
+    const isSameDay = targetSet.lastProductionDate === todayStr;
+    const currentTodayProd = isSameDay ? (targetSet.todayProduction || 0) : 0;
+    const newTodayProd = currentTodayProd + cycles;
+
     // Update set
     await db.sets.update(setId, {
       currentTotalCycle: newCycle,
-      todayProduction: targetSet.todayProduction + cycles,
+      todayProduction: newTodayProd,
       lastProductionDate: todayStr,
       updatedAt: new Date().toISOString(),
     });
@@ -277,15 +298,19 @@ export default function App() {
       return;
     }
 
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = getTodayStr();
 
     for (const targetSet of targetSets) {
       const prevCycle = targetSet.currentTotalCycle;
       const newCycle = prevCycle + cycles;
 
+      const isSameDay = targetSet.lastProductionDate === todayStr;
+      const currentTodayProd = isSameDay ? (targetSet.todayProduction || 0) : 0;
+      const newTodayProd = currentTodayProd + cycles;
+
       await db.sets.update(targetSet.id, {
         currentTotalCycle: newCycle,
-        todayProduction: targetSet.todayProduction + cycles,
+        todayProduction: newTodayProd,
         lastProductionDate: todayStr,
         updatedAt: new Date().toISOString(),
       });
@@ -411,10 +436,12 @@ export default function App() {
         const newCycle = Math.max(0, prevCycle - prod.productionCycles);
 
         // Decrement today's production if the record is on the same day as today
-        const todayStr = new Date().toISOString().split('T')[0];
+        const todayStr = getTodayStr();
         let newTodayProd = targetSet.todayProduction;
-        if (prod.date === todayStr) {
+        if (prod.date === todayStr && targetSet.lastProductionDate === todayStr) {
           newTodayProd = Math.max(0, targetSet.todayProduction - prod.productionCycles);
+        } else if (targetSet.lastProductionDate !== todayStr) {
+          newTodayProd = 0;
         }
 
         await db.sets.update(prod.setId, {
