@@ -103,7 +103,7 @@ export const LogProductionModal: React.FC<LogProductionModalProps> = ({
       return;
     }
 
-    setAuthError('Invalid password. Enter a valid supervisor or admin password.');
+    setAuthError('Invalid password. Enter a valid authorization password.');
   };
 
   const fromSet = sets.find(s => s.id === fromSetId);
@@ -117,7 +117,7 @@ export const LogProductionModal: React.FC<LogProductionModalProps> = ({
     setFormError('');
     
     if (!isCheckedByVerified || !checkedBy.trim()) {
-      setFormError('Checked By requires password sign-off from an authorized supervisor or admin.');
+      setFormError('Checked By requires password sign-off from an authorized person.');
       handleOpenAuthModal();
       return;
     }

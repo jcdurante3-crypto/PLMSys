@@ -2,7 +2,8 @@
   "name": "react-example",
   "private": true,
   "version": "1.0.0",
-  "author": "J. Durante",
+  "author": "J.Durante",
+  "publisher": "J.Durante",
   "type": "module",
   "main": "dist-electron/main.cjs",
   "scripts": {
@@ -44,6 +45,7 @@
   "build": {
     "appId": "com.plm.system",
     "productName": "Plate Lifecycle Monitoring System",
+    "publisherName": "J.Durante",
     "directories": {
       "output": "release"
     },

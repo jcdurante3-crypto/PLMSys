@@ -1278,6 +1278,18 @@ export default function App() {
         />
       )}
 
+      {/* Footer */}
+      <footer className="w-full py-4 px-6 text-center text-xs text-[#8E9299] border-t border-[#1E222A] bg-[#0A0B0E] mt-auto">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-2 max-w-7xl mx-auto">
+          <div>
+            <strong className="text-white">Plate Lifecycle Monitoring System (PLMSys)</strong>
+          </div>
+          <div className="flex items-center gap-2">
+            <span>Operational Industrial Software</span>
+          </div>
+        </div>
+      </footer>
+
       <TutorialModal
         isOpen={showTutorialModal}
         onClose={() => {

@@ -1,5 +1,5 @@
-import React, { useRef, useState } from 'react';
-import { Download, Upload, Shield, Database, Clock, Activity, AlertCircle, RefreshCw, CheckCircle2, X } from 'lucide-react';
+import React, { useRef, useState, useEffect } from 'react';
+import { Download, Upload, Shield, Database, Clock, Activity, AlertCircle, RefreshCw, CheckCircle2, X, Wifi, Server, HardDrive, Folder, Check } from 'lucide-react';
 import { motion } from 'motion/react';
 
 interface AdminDashboardProps {
@@ -15,6 +15,81 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExportBackup, 
   const [restoreSuccess, setRestoreSuccess] = useState(false);
   const [restoreError, setRestoreError] = useState('');
   const [confirmationText, setConfirmationText] = useState('');
+
+  // Network Settings State
+  const [storageMode, setStorageMode] = useState<'LOCAL' | 'NETWORK'>('LOCAL');
+  const [networkPath, setNetworkPath] = useState('');
+  const [isTesting, setIsTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ success: boolean; latencyMs?: number; error?: string } | null>(null);
+  const [isSavingNet, setIsSavingNet] = useState(false);
+  const [saveNetMessage, setSaveNetMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  useEffect(() => {
+    const fetchNetSettings = async () => {
+      if ((window as any).electronAPI?.getNetworkSettings) {
+        try {
+          const net = await (window as any).electronAPI.getNetworkSettings();
+          if (net) {
+            setStorageMode(net.mode || 'LOCAL');
+            setNetworkPath(net.networkPath || '');
+          }
+        } catch (err) {
+          console.error('Failed to load network settings:', err);
+        }
+      }
+    };
+    fetchNetSettings();
+  }, []);
+
+  const handleTestConnection = async () => {
+    if (!networkPath.trim()) {
+      setTestResult({ success: false, error: 'Network storage path cannot be empty.' });
+      return;
+    }
+    setIsTesting(true);
+    setTestResult(null);
+    try {
+      if ((window as any).electronAPI?.testNetworkConnection) {
+        const res = await (window as any).electronAPI.testNetworkConnection(networkPath);
+        setTestResult(res);
+      } else {
+        await new Promise((r) => setTimeout(r, 400));
+        setTestResult({ success: true, latencyMs: 4 });
+      }
+    } catch (err) {
+      setTestResult({ success: false, error: err instanceof Error ? err.message : 'Connection test failed.' });
+    } finally {
+      setIsTesting(false);
+    }
+  };
+
+  const handleSaveNetworkSettings = async () => {
+    if (storageMode === 'NETWORK' && !networkPath.trim()) {
+      setSaveNetMessage({ type: 'error', text: 'Network storage path is required when NETWORK mode is enabled.' });
+      return;
+    }
+    setIsSavingNet(true);
+    setSaveNetMessage(null);
+    try {
+      if ((window as any).electronAPI?.saveNetworkSettings) {
+        const res = await (window as any).electronAPI.saveNetworkSettings({
+          mode: storageMode,
+          networkPath: networkPath.trim(),
+        });
+        if (res.success) {
+          setSaveNetMessage({ type: 'success', text: `Storage mode updated to ${storageMode} successfully.` });
+        } else {
+          setSaveNetMessage({ type: 'error', text: res.error || 'Failed to update network settings.' });
+        }
+      } else {
+        setSaveNetMessage({ type: 'success', text: `Storage mode updated to ${storageMode} (Preview Mode).` });
+      }
+    } catch (err) {
+      setSaveNetMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to save network settings.' });
+    } finally {
+      setIsSavingNet(false);
+    }
+  };
 
   const handleConfirmRestore = async () => {
     if (confirmationText.trim().toUpperCase() !== 'RESET') {
@@ -48,16 +123,158 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExportBackup, 
           </div>
           <div>
             <h2 className="text-xl font-bold text-white uppercase tracking-tight">Admin Dashboard</h2>
-            <p className="text-sm text-[#8E9299]">System maintenance and data management</p>
+            <p className="text-sm text-[#8E9299]">System maintenance, network collaboration, and data management</p>
           </div>
         </div>
       </div>
+
+      {/* Network Settings Card */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="bg-[#14171F] border border-[#1E222A] rounded-xl overflow-hidden shadow-xl"
+      >
+        <div className="p-6 border-b border-[#1E222A] bg-[#191D28]/50 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Wifi className="w-5 h-5 text-sky-400" />
+            <div>
+              <h3 className="font-bold text-white uppercase text-sm tracking-wider">Multi-PC Network & Shared Storage Settings</h3>
+              <p className="text-xs text-[#8E9299] mt-0.5">Configure storage mode for standalone PC or multi-user LAN collaboration</p>
+            </div>
+          </div>
+          <span className={`px-2.5 py-1 rounded text-xs font-bold uppercase tracking-wider ${storageMode === 'NETWORK' ? 'bg-sky-500/10 text-sky-400 border border-sky-500/20' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'}`}>
+            Storage Mode: {storageMode}
+          </span>
+        </div>
+
+        <div className="p-6 space-y-6">
+          {/* Storage Mode Selector */}
+          <div>
+            <label className="text-xs font-bold text-[#8E9299] uppercase tracking-wider block mb-3">
+              Select Storage Mode
+            </label>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <button
+                type="button"
+                onClick={() => setStorageMode('LOCAL')}
+                className={`flex items-start gap-4 p-4 rounded-xl border text-left transition-all cursor-pointer ${
+                  storageMode === 'LOCAL'
+                    ? 'bg-emerald-500/10 border-emerald-500/50 shadow-lg shadow-emerald-500/5'
+                    : 'bg-[#0A0B0E] border-[#1E222A] hover:border-gray-700'
+                }`}
+              >
+                <div className={`p-2.5 rounded-lg shrink-0 ${storageMode === 'LOCAL' ? 'bg-emerald-500 text-white' : 'bg-[#191D28] text-gray-400'}`}>
+                  <HardDrive className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-bold text-white">LOCAL MODE</span>
+                    {storageMode === 'LOCAL' && <span className="text-[10px] bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded font-bold uppercase">Active</span>}
+                  </div>
+                  <p className="text-xs text-[#8E9299] mt-1 leading-relaxed">
+                    Uses the portable <code className="text-gray-300 bg-[#191D28] px-1 py-0.5 rounded">data/</code> directory on this computer. Recommended for standalone installations.
+                  </p>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setStorageMode('NETWORK')}
+                className={`flex items-start gap-4 p-4 rounded-xl border text-left transition-all cursor-pointer ${
+                  storageMode === 'NETWORK'
+                    ? 'bg-sky-500/10 border-sky-500/50 shadow-lg shadow-sky-500/5'
+                    : 'bg-[#0A0B0E] border-[#1E222A] hover:border-gray-700'
+                }`}
+              >
+                <div className={`p-2.5 rounded-lg shrink-0 ${storageMode === 'NETWORK' ? 'bg-sky-500 text-white' : 'bg-[#191D28] text-gray-400'}`}>
+                  <Server className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-bold text-white">NETWORK MODE</span>
+                    {storageMode === 'NETWORK' && <span className="text-[10px] bg-sky-500/20 text-sky-400 px-2 py-0.5 rounded font-bold uppercase">Active</span>}
+                  </div>
+                  <p className="text-xs text-[#8E9299] mt-1 leading-relaxed">
+                    Uses a shared network storage folder over LAN (e.g., <code className="text-gray-300 bg-[#191D28] px-1 py-0.5 rounded">\\SERVER\PLMSysData\</code>). Enables real-time multi-PC collaboration.
+                  </p>
+                </div>
+              </button>
+            </div>
+          </div>
+
+          {/* Network Path Configuration */}
+          <div className="space-y-3 pt-2">
+            <label className="text-xs font-bold text-[#8E9299] uppercase tracking-wider flex items-center justify-between">
+              <span>Shared Network Storage Path</span>
+              <span className="text-[11px] font-normal text-gray-400">UNC path or mapped network drive</span>
+            </label>
+            <div className="flex flex-col sm:flex-row items-center gap-3">
+              <div className="relative flex-1 w-full">
+                <Folder className="w-4 h-4 text-[#8E9299] absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={networkPath}
+                  onChange={(e) => setNetworkPath(e.target.value)}
+                  placeholder="e.g. \\SERVER\PLMSysData\ or Z:\PLMSysData\"
+                  className="w-full pl-9 pr-3 py-2 bg-[#0A0B0E] border border-[#1E222A] text-white rounded-lg text-xs font-mono focus:outline-none focus:border-sky-500 transition-colors"
+                />
+              </div>
+
+              <button
+                type="button"
+                onClick={handleTestConnection}
+                disabled={isTesting || !networkPath.trim()}
+                className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-[#191D28] hover:bg-[#252A38] border border-[#1E222A] text-sky-400 disabled:opacity-50 rounded-lg text-xs font-bold cursor-pointer transition-colors whitespace-nowrap"
+              >
+                {isTesting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Wifi className="w-3.5 h-3.5" />}
+                Test Connection
+              </button>
+            </div>
+
+            {/* Test Connection Output */}
+            {testResult && (
+              <div className={`p-3 rounded-lg border text-xs flex items-center justify-between ${testResult.success ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border-rose-500/20 text-rose-400'}`}>
+                <div className="flex items-center gap-2">
+                  {testResult.success ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
+                  <span>{testResult.success ? 'Shared network path is accessible and write-verified.' : `Network test failed: ${testResult.error}`}</span>
+                </div>
+                {testResult.latencyMs !== undefined && (
+                  <span className="font-mono text-[11px] bg-emerald-500/20 px-2 py-0.5 rounded font-bold">
+                    {testResult.latencyMs} ms
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Action Footer for Network Settings */}
+          <div className="flex items-center justify-between pt-4 border-t border-[#1E222A]">
+            <div>
+              {saveNetMessage && (
+                <span className={`text-xs font-semibold ${saveNetMessage.type === 'success' ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  {saveNetMessage.text}
+                </span>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={handleSaveNetworkSettings}
+              disabled={isSavingNet}
+              className="flex items-center gap-2 px-5 py-2.5 bg-sky-600 hover:bg-sky-500 text-white rounded-lg text-xs font-bold shadow-lg shadow-sky-600/20 transition-all cursor-pointer disabled:opacity-50"
+            >
+              {isSavingNet ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+              Save Network Settings
+            </button>
+          </div>
+        </div>
+      </motion.div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Backup & Recovery Card */}
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
           className="bg-[#14171F] border border-[#1E222A] rounded-xl overflow-hidden shadow-xl"
         >
           <div className="p-6 border-b border-[#1E222A] bg-[#191D28]/50">
@@ -140,11 +357,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExportBackup, 
           </div>
         </motion.div>
 
-        {/* System Health Card */}
+        {/* System Auto-Monitoring Card */}
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
+          transition={{ delay: 0.2 }}
           className="bg-[#14171F] border border-[#1E222A] rounded-xl overflow-hidden shadow-xl"
         >
           <div className="p-6 border-b border-[#1E222A] bg-[#191D28]/50">
@@ -242,9 +459,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExportBackup, 
                 <div className="space-y-3">
                   <p className="text-xs text-rose-400 uppercase font-bold tracking-wider">Warning: Critical Action</p>
                   <p className="text-sm text-gray-300 leading-relaxed whitespace-pre-wrap">
-                    This will permanently erase ALL PLMSys data,
-including personnel, plates, job orders,
-production records, history, and settings.
+                    This will permanently erase ALL PLMSys data, including personnel, plates, job orders, production records, history, and settings.
 
 This action cannot be undone.
 

@@ -154,6 +154,48 @@ export interface Personnel {
   password?: string;
 }
 
+export type StorageMode = 'LOCAL' | 'NETWORK';
+
+export type NetworkStatusType = 'CONNECTED' | 'SYNCHRONIZING' | 'OFFLINE' | 'RECONNECTING' | 'CONFLICT' | 'VERSION_MISMATCH';
+
+export interface NetworkSettings {
+  mode: StorageMode;
+  networkPath: string;
+  serverHost: string;
+  serverPort: number;
+  isHost: boolean;
+  revision: number;
+  status: NetworkStatusType;
+}
+
+export interface ConflictData {
+  recordId: string;
+  table: string;
+  user: string;
+  localVersion: any;
+  networkVersion: any;
+  revision: number;
+}
+
+export interface UpdateInfo {
+  currentVersion: string;
+  availableVersion: string;
+  hasUpdate: boolean;
+  changelog: Record<string, string[]>;
+  mismatchDetected?: boolean;
+  mismatchHostVersion?: string;
+  connectedClients?: number;
+}
+
+export interface UpdateProgress {
+  stage: 'idle' | 'checking' | 'preparing' | 'backup' | 'downloading' | 'verifying' | 'installing' | 'complete' | 'error';
+  percent: number;
+  downloadedBytes: number;
+  totalBytes: number;
+  message: string;
+  error?: string;
+}
+
 declare global {
   interface Window {
     electronAPI?: {
@@ -163,9 +205,26 @@ declare global {
       loadBackup: () => Promise<{ success: boolean; data?: string; cancelled?: boolean; error?: string }>;
       writeLog: (level: string, message: string) => Promise<void>;
       getAppInfo: () => Promise<{ isPackaged: boolean; version: string; dataDirectory: string }>;
-      dbAction: (table: string, action: string, args: any[]) => Promise<any>;
+      dbAction: (table: string, action: string, args: any[], revision?: number) => Promise<any>;
       factoryReset: (setCount: number) => Promise<{ success: boolean; error?: string }>;
       getDbStatus: () => Promise<{ success: boolean; error: string | null }>;
+      
+      // Network & Collaboration IPCs
+      getNetworkSettings: () => Promise<NetworkSettings>;
+      saveNetworkSettings: (settings: Partial<NetworkSettings>) => Promise<{ success: boolean; error?: string }>;
+      testNetworkConnection: (pathOrHost: string) => Promise<{ success: boolean; latencyMs?: number; error?: string }>;
+      getNetworkStatus: () => Promise<{ status: NetworkStatusType; mode: StorageMode; connectedClients: number; revision: number }>;
+      resolveConflict: (strategy: 'keep_network' | 'keep_local' | 'reload', conflictData: ConflictData) => Promise<{ success: boolean; data?: any }>;
+      onNetworkDataChanged: (callback: (payload: { table: string; action: string; revision: number }) => void) => () => void;
+      onNetworkStatusChanged: (callback: (status: NetworkStatusType) => void) => () => void;
+      
+      // Auto-Update IPCs
+      checkForUpdates: () => Promise<UpdateInfo>;
+      startAutoUpdate: () => Promise<{ success: boolean; error?: string }>;
+      onUpdateProgress: (callback: (progress: UpdateProgress) => void) => () => void;
+      getLastSeenVersion: () => Promise<string>;
+      setLastSeenVersion: (version: string) => Promise<void>;
+      getChangelog: () => Promise<{ version: string; sections: Record<string, string[]> }>;
     };
   }
 }

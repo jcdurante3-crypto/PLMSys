@@ -12,16 +12,46 @@ export interface ElectronAPI {
   getDbStatus: () => Promise<{ success: boolean; error: string | null }>;
 }
 
-const electronAPI: ElectronAPI = {
+const electronAPI = {
   openDataFolder: () => ipcRenderer.invoke('open-data-folder'),
   openBackupFolder: () => ipcRenderer.invoke('open-backup-folder'),
-  saveBackup: (backupDataText) => ipcRenderer.invoke('save-backup', backupDataText),
+  saveBackup: (backupDataText: string) => ipcRenderer.invoke('save-backup', backupDataText),
   loadBackup: () => ipcRenderer.invoke('load-backup'),
-  writeLog: (level, message) => ipcRenderer.invoke('write-log', level, message),
+  writeLog: (level: string, message: string) => ipcRenderer.invoke('write-log', level, message),
   getAppInfo: () => ipcRenderer.invoke('get-app-info'),
-  dbAction: (table, action, args) => ipcRenderer.invoke('db-action', { table, action, args }),
-  factoryReset: (setCount) => ipcRenderer.invoke('factory-reset', { setCount }),
+  dbAction: (table: string, action: string, args: any[], revision?: number) =>
+    ipcRenderer.invoke('db-action', { table, action, args, revision }),
+  factoryReset: (setCount: number) => ipcRenderer.invoke('factory-reset', { setCount }),
   getDbStatus: () => ipcRenderer.invoke('get-db-status'),
+
+  // Network & Collaboration IPCs
+  getNetworkSettings: () => ipcRenderer.invoke('get-network-settings'),
+  saveNetworkSettings: (settings: any) => ipcRenderer.invoke('save-network-settings', settings),
+  testNetworkConnection: (pathOrHost: string) => ipcRenderer.invoke('test-network-connection', pathOrHost),
+  getNetworkStatus: () => ipcRenderer.invoke('get-network-status'),
+  resolveConflict: (strategy: string, conflictData: any) => ipcRenderer.invoke('resolve-conflict', { strategy, conflictData }),
+  onNetworkDataChanged: (callback: (payload: any) => void) => {
+    const handler = (_event: any, payload: any) => callback(payload);
+    ipcRenderer.on('network-data-changed', handler);
+    return () => ipcRenderer.removeListener('network-data-changed', handler);
+  },
+  onNetworkStatusChanged: (callback: (status: any) => void) => {
+    const handler = (_event: any, status: any) => callback(status);
+    ipcRenderer.on('network-status-changed', handler);
+    return () => ipcRenderer.removeListener('network-status-changed', handler);
+  },
+
+  // Auto-Update IPCs
+  checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
+  startAutoUpdate: () => ipcRenderer.invoke('start-auto-update'),
+  onUpdateProgress: (callback: (progress: any) => void) => {
+    const handler = (_event: any, progress: any) => callback(progress);
+    ipcRenderer.on('update-progress', handler);
+    return () => ipcRenderer.removeListener('update-progress', handler);
+  },
+  getLastSeenVersion: () => ipcRenderer.invoke('get-last-seen-version'),
+  setLastSeenVersion: (version: string) => ipcRenderer.invoke('set-last-seen-version', version),
+  getChangelog: () => ipcRenderer.invoke('get-changelog'),
 };
 
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);
