@@ -21,25 +21,13 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: 20
+          cache: 'npm'
 
-      - name: Cache npm dependencies
-        uses: actions/cache@v4
-        with:
-          path: ~/.npm
-          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node-
-
-      - name: Clean & install dependencies
-        shell: bash
-        run: |
-          npm cache clean --force
-          npm ci --include=optional || npm install --include=optional --force
-          npm install --no-save @rollup/rollup-win32-x64-msvc
+      - name: Install dependencies
+        run: npm install --include=optional --force
 
       - name: Build Electron App
-        shell: bash
         run: npm run electron:build
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
