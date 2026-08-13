@@ -51,6 +51,7 @@ jobs:
           CI: false
           NODE_ENV: production
         with:
+          args: --verbose
           tagName: v__VERSION__
           releaseName: "PLMSys v__VERSION__"
           releaseBody: "PLMSys Tauri 2 Windows Desktop Release"

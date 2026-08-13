@@ -12,6 +12,7 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "Plate Lifecycle Monitoring System (PLMSys)",
         "width": 1280,
         "height": 800,
