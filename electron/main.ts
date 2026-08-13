@@ -118,6 +118,79 @@ logToFile('info', `Data folder set to: ${dataDirectory}`);
 const dbFilePath = path.join(dirs.database, 'plmsys.json');
 let dbErrorStatus: string | null = null;
 
+// Cross-PC Atomic File Locking for Shared LAN Storage
+const LOCK_DIR_NAME = '.plmsys.lock';
+const LOCK_TIMEOUT_MS = 10000; // 10 seconds max lock lifetime
+const MAX_ACQUIRE_WAIT_MS = 5000; // 5 seconds max wait to acquire lock
+
+function acquireDatabaseLock(targetDir: string): () => void {
+  const lockDirPath = path.join(targetDir, LOCK_DIR_NAME);
+  const lockMetaPath = path.join(lockDirPath, 'owner.json');
+  const startTime = Date.now();
+
+  while (Date.now() - startTime < MAX_ACQUIRE_WAIT_MS) {
+    try {
+      fs.mkdirSync(lockDirPath);
+      try {
+        fs.writeFileSync(
+          lockMetaPath,
+          JSON.stringify({
+            pid: process.pid,
+            hostname: require('os').hostname(),
+            time: Date.now(),
+          }),
+          'utf8'
+        );
+      } catch (e) {}
+
+      return () => {
+        try {
+          if (fs.existsSync(lockMetaPath)) {
+            fs.unlinkSync(lockMetaPath);
+          }
+        } catch (e) {}
+        try {
+          if (fs.existsSync(lockDirPath)) {
+            fs.rmdirSync(lockDirPath);
+          }
+        } catch (e) {}
+      };
+    } catch (err: any) {
+      if (err.code === 'EEXIST') {
+        try {
+          if (fs.existsSync(lockMetaPath)) {
+            const metaContent = fs.readFileSync(lockMetaPath, 'utf8');
+            const meta = JSON.parse(metaContent);
+            if (Date.now() - (meta.time || 0) > LOCK_TIMEOUT_MS) {
+              logToFile('warn', `Stale lock directory detected (age: ${Date.now() - meta.time}ms). Removing stale lock.`);
+              try { fs.unlinkSync(lockMetaPath); } catch (e) {}
+              try { fs.rmdirSync(lockDirPath); } catch (e) {}
+              continue;
+            }
+          } else if (fs.existsSync(lockDirPath)) {
+            const stats = fs.statSync(lockDirPath);
+            if (Date.now() - stats.mtimeMs > LOCK_TIMEOUT_MS) {
+              logToFile('warn', 'Stale lock directory without metadata detected. Removing stale lock directory.');
+              try { fs.rmdirSync(lockDirPath); } catch (e) {}
+              continue;
+            }
+          }
+        } catch (e) {
+          try { fs.rmdirSync(lockDirPath); } catch (e) {}
+        }
+
+        const delay = Math.floor(20 + Math.random() * 60);
+        const lockWaitEnd = Date.now() + delay;
+        while (Date.now() < lockWaitEnd) {}
+      } else {
+        throw err;
+      }
+    }
+  }
+
+  throw new Error('Database is locked by another PC writing over LAN. Please try again in a moment.');
+}
+
 const ALLOWED_TABLES = new Set([
   'sets',
   'positions',
@@ -321,39 +394,80 @@ function findNewestValidBackup(): string | null {
 
 let dbFileWatcher: fs.FSWatcher | null = null;
 let lastWatchedMtime = 0;
+let lastWatchedRev = 0;
+let dbPollInterval: NodeJS.Timeout | null = null;
 
 function setupDbFileWatcher() {
   if (dbFileWatcher) {
     try { dbFileWatcher.close(); } catch (e) {}
     dbFileWatcher = null;
   }
+  if (dbPollInterval) {
+    clearInterval(dbPollInterval);
+    dbPollInterval = null;
+  }
 
   const targetPath = getDatabasePath();
+
+  const checkForExternalChanges = () => {
+    try {
+      if (!fs.existsSync(targetPath)) {
+        if (currentNetworkSettings.mode === 'NETWORK') {
+          if (currentNetworkSettings.status !== 'OFFLINE') {
+            logToFile('warn', `Network storage path not found or unreachable: ${targetPath}`);
+            broadcastNetworkStatus('OFFLINE');
+          }
+        }
+        return;
+      }
+
+      const stats = fs.statSync(targetPath);
+      if (stats.mtimeMs > lastWatchedMtime + 100) {
+        lastWatchedMtime = stats.mtimeMs;
+        const updatedDb = readDb();
+        const newRev = updatedDb._revision || 1;
+        if (newRev !== lastWatchedRev) {
+          lastWatchedRev = newRev;
+          currentNetworkSettings.revision = newRev;
+          logToFile('info', `LAN database change detected on disk: ${targetPath} (rev ${newRev})`);
+
+          if (currentNetworkSettings.status !== 'CONNECTED') {
+            broadcastNetworkStatus('CONNECTED');
+          }
+          broadcastDataChanged('all', 'reload', newRev);
+        }
+      } else if (currentNetworkSettings.status === 'OFFLINE' || currentNetworkSettings.status === 'RECONNECTING') {
+        broadcastNetworkStatus('CONNECTED');
+      }
+    } catch (err: any) {
+      if (currentNetworkSettings.mode === 'NETWORK' && currentNetworkSettings.status !== 'OFFLINE') {
+        logToFile('warn', `Network storage health check error: ${err.message || err}`);
+        broadcastNetworkStatus('OFFLINE');
+      }
+    }
+  };
+
   if (fs.existsSync(targetPath)) {
     try {
       const stats = fs.statSync(targetPath);
       lastWatchedMtime = stats.mtimeMs;
+      try {
+        const dbObj = JSON.parse(fs.readFileSync(targetPath, 'utf8'));
+        lastWatchedRev = dbObj._revision || 1;
+      } catch (e) {}
 
       dbFileWatcher = fs.watch(targetPath, (eventType) => {
         if (eventType === 'change') {
-          try {
-            const newStats = fs.statSync(targetPath);
-            if (newStats.mtimeMs > lastWatchedMtime + 150) {
-              lastWatchedMtime = newStats.mtimeMs;
-              logToFile('info', `External database change detected on disk: ${targetPath}`);
-              const updatedDb = readDb();
-              const newRev = updatedDb._revision || 1;
-              currentNetworkSettings.revision = newRev;
-
-              broadcastDataChanged('all', 'reload', newRev);
-            }
-          } catch (err) {}
+          checkForExternalChanges();
         }
       });
     } catch (e) {
-      logToFile('warn', `Failed to attach file watcher to ${targetPath}: ${e}`);
+      logToFile('warn', `Failed to attach fs.watch to ${targetPath}: ${e}`);
     }
   }
+
+  // Active LAN polling check every 1000ms for high responsiveness across shared network folders
+  dbPollInterval = setInterval(checkForExternalChanges, 1000);
 }
 
 function initDbFile() {
@@ -461,14 +575,20 @@ let isQuitting = false;
 function writeDb(data: any, table?: string, action?: string, args?: any[]) {
   pendingWritesCount++;
   const targetPath = getDatabasePath();
+  const targetDir = path.dirname(targetPath);
   const tempFilePath = targetPath + '.tmp';
   const backupFilePath = targetPath + '.bak';
   let backupCreated = false;
+  let releaseLock: (() => void) | null = null;
 
   try {
+    // Acquire Cross-PC atomic lock before touching files
+    releaseLock = acquireDatabaseLock(targetDir);
+
     // Increment revision
     data._revision = (data._revision || 1) + 1;
     currentNetworkSettings.revision = data._revision;
+    lastWatchedRev = data._revision;
 
     logToFile('info', `DB WRITE START - table: ${table || 'N/A'}, action: ${action || 'N/A'}, revision: ${data._revision}, database path: ${targetPath}`);
     
@@ -520,6 +640,10 @@ function writeDb(data: any, table?: string, action?: string, args?: any[]) {
       throw new Error(`Verification failed: Written database validation failed.`);
     }
 
+    // Update last watched modification time to prevent self-triggering watcher loops
+    const stats = fs.statSync(targetPath);
+    lastWatchedMtime = stats.mtimeMs;
+
     // 6. Clean up temp backup
     if (backupCreated && fs.existsSync(backupFilePath)) {
       try {
@@ -540,7 +664,6 @@ function writeDb(data: any, table?: string, action?: string, args?: any[]) {
     // Broadcast data changed event
     broadcastDataChanged(table || 'all', action || 'write', data._revision);
 
-    const stats = fs.statSync(targetPath);
     logToFile('info', `DB WRITE SUCCESS - revision: ${data._revision}, database path: ${targetPath}, size: ${stats.size} bytes`);
   } catch (err: any) {
     const errMsg = err instanceof Error ? err.message : String(err);
@@ -567,6 +690,9 @@ function writeDb(data: any, table?: string, action?: string, args?: any[]) {
 
     throw err;
   } finally {
+    if (releaseLock) {
+      try { releaseLock(); } catch (e) {}
+    }
     pendingWritesCount--;
   }
 }
@@ -724,7 +850,7 @@ ipcMain.handle('factory-reset', async (event, { setCount }) => {
   }
 });
 
-ipcMain.handle('db-action', async (event, { table, action, args }) => {
+ipcMain.handle('db-action', async (event, { table, action, args, revision }) => {
   // Security Checks: Validate table and action
   if (!ALLOWED_TABLES.has(table)) {
     logToFile('error', `Security Alert: Unauthorized access to table: "${table}"`);
@@ -735,95 +861,135 @@ ipcMain.handle('db-action', async (event, { table, action, args }) => {
     throw new Error(`Forbidden database action: ${action}`);
   }
 
-  const dbData = readDb();
-  if (!dbData[table] || !Array.isArray(dbData[table])) {
-    const errorMsg = `Database schema invalid: table "${table}" is missing or is not an array in the persisted file.`;
-    logToFile('error', errorMsg);
-    throw new Error(errorMsg);
-  }
+  const targetPath = getDatabasePath();
+  const targetDir = path.dirname(targetPath);
+  let releaseLock: (() => void) | null = null;
 
-  const collection = dbData[table];
-
-  switch (action) {
-    case 'toArray':
-      return collection;
-
-    case 'get': {
-      const id = args[0];
-      return collection.find((item: any) => item.id === id) || null;
-    }
-
-    case 'put': {
-      const item = args[0];
-      const index = collection.findIndex((x: any) => x.id === item.id);
-      if (index !== -1) {
-        collection[index] = { ...collection[index], ...item };
-      } else {
-        collection.push(item);
+  try {
+    // For read-only actions, read directly without file locking
+    if (action === 'toArray' || action === 'get' || action === 'count') {
+      const dbData = readDb();
+      const collection = dbData[table] || [];
+      if (action === 'toArray') return collection;
+      if (action === 'get') {
+        const id = args[0];
+        return collection.find((item: any) => item.id === id) || null;
       }
-      writeDb(dbData, table, action, args);
-      return item.id;
+      if (action === 'count') return collection.length;
     }
 
-    case 'add': {
-      const item = args[0];
-      const index = collection.findIndex((x: any) => x.id === item.id);
-      if (index !== -1) {
-        throw new Error(`Key ${item.id} already exists`);
-      } else {
-        collection.push(item);
+    // Acquire lock for mutation actions
+    releaseLock = acquireDatabaseLock(targetDir);
+    const dbData = readDb();
+
+    if (!dbData[table] || !Array.isArray(dbData[table])) {
+      const errorMsg = `Database schema invalid: table "${table}" is missing or is not an array in the persisted file.`;
+      logToFile('error', errorMsg);
+      throw new Error(errorMsg);
+    }
+
+    const diskRevision = dbData._revision || 1;
+    const collection = dbData[table];
+
+    // Revision check & Conflict Detection for concurrent LAN edits
+    if (typeof revision === 'number' && revision < diskRevision) {
+      if (action === 'put' || action === 'update') {
+        const item = args[0];
+        const targetId = action === 'update' ? args[0] : item.id;
+        const diskItem = collection.find((x: any) => x.id === targetId);
+
+        if (diskItem) {
+          logToFile(
+            'warn',
+            `Concurrent edit conflict detected on table "${table}" for record "${targetId}". Disk rev: ${diskRevision}, Client rev: ${revision}`
+          );
+          broadcastNetworkStatus('CONFLICT');
+          return {
+            conflict: true,
+            localVersion: action === 'update' ? { id: targetId, ...args[1] } : item,
+            serverVersion: diskItem,
+            table,
+            revision: diskRevision,
+            error: `Concurrent edit conflict detected on ${table}. Record was updated by another PC on the LAN network.`
+          };
+        }
       }
-      writeDb(dbData, table, action, args);
-      return item.id;
     }
 
-    case 'update': {
-      const id = args[0];
-      const changes = args[1];
-      const index = collection.findIndex((x: any) => x.id === id);
-      if (index !== -1) {
-        collection[index] = { ...collection[index], ...changes };
-        writeDb(dbData, table, action, args);
-        return 1;
-      }
-      return 0;
-    }
-
-    case 'delete': {
-      const id = args[0];
-      const initialLength = collection.length;
-      dbData[table] = collection.filter((x: any) => x.id !== id);
-      if (dbData[table].length !== initialLength) {
-        writeDb(dbData, table, action, args);
-        return 1;
-      }
-      return 0;
-    }
-
-    case 'clear':
-      dbData[table] = [];
-      writeDb(dbData, table, action, args);
-      return;
-
-    case 'bulkPut': {
-      const items = args[0];
-      items.forEach((item: any) => {
+    switch (action) {
+      case 'put': {
+        const item = args[0];
         const index = collection.findIndex((x: any) => x.id === item.id);
         if (index !== -1) {
           collection[index] = { ...collection[index], ...item };
         } else {
           collection.push(item);
         }
-      });
-      writeDb(dbData, table, action, args);
-      return;
+        writeDb(dbData, table, action, args);
+        return item.id;
+      }
+
+      case 'add': {
+        const item = args[0];
+        const index = collection.findIndex((x: any) => x.id === item.id);
+        if (index !== -1) {
+          throw new Error(`Key ${item.id} already exists`);
+        } else {
+          collection.push(item);
+        }
+        writeDb(dbData, table, action, args);
+        return item.id;
+      }
+
+      case 'update': {
+        const id = args[0];
+        const changes = args[1];
+        const index = collection.findIndex((x: any) => x.id === id);
+        if (index !== -1) {
+          collection[index] = { ...collection[index], ...changes };
+          writeDb(dbData, table, action, args);
+          return 1;
+        }
+        return 0;
+      }
+
+      case 'delete': {
+        const id = args[0];
+        const initialLength = collection.length;
+        dbData[table] = collection.filter((x: any) => x.id !== id);
+        if (dbData[table].length !== initialLength) {
+          writeDb(dbData, table, action, args);
+          return 1;
+        }
+        return 0;
+      }
+
+      case 'clear':
+        dbData[table] = [];
+        writeDb(dbData, table, action, args);
+        return;
+
+      case 'bulkPut': {
+        const items = args[0];
+        items.forEach((item: any) => {
+          const index = collection.findIndex((x: any) => x.id === item.id);
+          if (index !== -1) {
+            collection[index] = { ...collection[index], ...item };
+          } else {
+            collection.push(item);
+          }
+        });
+        writeDb(dbData, table, action, args);
+        return;
+      }
+
+      default:
+        throw new Error(`Unsupported action: ${action}`);
     }
-
-    case 'count':
-      return collection.length;
-
-    default:
-      throw new Error(`Unsupported action: ${action}`);
+  } finally {
+    if (releaseLock) {
+      try { releaseLock(); } catch (e) {}
+    }
   }
 });
 

@@ -148,6 +148,31 @@ export default function App() {
     };
     checkDbStatus();
     loadData();
+
+    let unsubData: (() => void) | undefined;
+    let unsubStatus: (() => void) | undefined;
+
+    if (window.electronAPI) {
+      if (window.electronAPI.onNetworkDataChanged) {
+        unsubData = window.electronAPI.onNetworkDataChanged(() => {
+          console.log('Network database change event received. Reloading data...');
+          loadData();
+        });
+      }
+      if (window.electronAPI.onNetworkStatusChanged) {
+        unsubStatus = window.electronAPI.onNetworkStatusChanged((status: string) => {
+          console.log('Network connection status update:', status);
+          if (status === 'CONNECTED') {
+            loadData();
+          }
+        });
+      }
+    }
+
+    return () => {
+      if (unsubData) unsubData();
+      if (unsubStatus) unsubStatus();
+    };
   }, []);
 
   // Handlers

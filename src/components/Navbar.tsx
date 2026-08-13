@@ -21,6 +21,27 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenLogin,
   onOpenTutorial,
 }) => {
+  const [netStatus, setNetStatus] = React.useState<string>('CONNECTED');
+  const [netMode, setNetMode] = React.useState<string>('LOCAL');
+
+  React.useEffect(() => {
+    if ((window as any).electronAPI) {
+      if ((window as any).electronAPI.getNetworkSettings) {
+        (window as any).electronAPI.getNetworkSettings().then((s: any) => {
+          if (s) {
+            setNetMode(s.mode || 'LOCAL');
+            setNetStatus(s.status || 'CONNECTED');
+          }
+        });
+      }
+      if ((window as any).electronAPI.onNetworkStatusChanged) {
+        return (window as any).electronAPI.onNetworkStatusChanged((status: string) => {
+          setNetStatus(status);
+        });
+      }
+    }
+  }, []);
+
   const isRedundantRole =
     (currentUser.name.toLowerCase() === 'operator' && currentUser.role === 'OPERATOR') ||
     (currentUser.name.toLowerCase().includes('admin') && currentUser.role === 'ADMIN') ||
@@ -39,7 +60,13 @@ export const Navbar: React.FC<NavbarProps> = ({
               <h1 className="text-sm sm:text-base font-bold tracking-tight uppercase text-white leading-none">
                 Plate Lifecycle Monitoring System
               </h1>
-              <span className="text-[10px] text-[#F27D26] font-semibold tracking-wider block mt-0.5">PLM SYSTEM</span>
+              <div className="flex items-center gap-2 mt-0.5">
+                <span className="text-[10px] text-[#F27D26] font-semibold tracking-wider block">PLM SYSTEM</span>
+                <div className="hidden lg:flex items-center gap-1.5 px-2 py-0.5 bg-[#14171F] border border-[#1E222A] rounded text-[10px] font-semibold text-[#8E9299]">
+                  <span className={`w-1.5 h-1.5 rounded-full ${netStatus === 'CONNECTED' ? (netMode === 'NETWORK' ? 'bg-sky-400 animate-pulse' : 'bg-emerald-400') : 'bg-rose-500 animate-ping'}`} />
+                  <span>{netMode === 'NETWORK' ? `LAN: ${netStatus}` : 'LOCAL'}</span>
+                </div>
+              </div>
             </div>
           </div>
 
