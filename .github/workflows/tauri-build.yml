@@ -45,18 +45,15 @@ jobs:
           npm run build
 
       - name: Build Tauri Windows App
-        uses: tauri-apps/tauri-action@v0
+        shell: bash
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CI: false
           NODE_ENV: production
-        with:
-          args: --verbose
-          tagName: v__VERSION__
-          releaseName: "PLMSys v__VERSION__"
-          releaseBody: "PLMSys Tauri 2 Windows Desktop Release"
-          releaseDraft: true
-          prerelease: false
+          RUST_BACKTRACE: 1
+          RUST_LOG: debug
+          CARGO_TERM_VERBOSE: true
+        run: |
+          npx tauri build --verbose
 
       - name: Upload Windows Artifacts
         uses: actions/upload-artifact@v4
