@@ -1,5 +1,5 @@
 import React from 'react';
-import { Layers, Activity, Search, FileText, Sliders, User, Shield, HelpCircle } from 'lucide-react';
+import { Layers, Activity, Search, FileText, Sliders, User, Shield, HelpCircle, RefreshCw } from 'lucide-react';
 import { User as UserType } from '../types';
 
 interface NavbarProps {
@@ -10,6 +10,7 @@ interface NavbarProps {
   currentUser: UserType;
   onOpenLogin: () => void;
   onOpenTutorial: () => void;
+  onOpenUpdater?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -20,9 +21,11 @@ export const Navbar: React.FC<NavbarProps> = ({
   currentUser,
   onOpenLogin,
   onOpenTutorial,
+  onOpenUpdater,
 }) => {
   const [netStatus, setNetStatus] = React.useState<string>('CONNECTED');
   const [netMode, setNetMode] = React.useState<string>('LOCAL');
+  const [hasUpdate, setHasUpdate] = React.useState<boolean>(false);
 
   React.useEffect(() => {
     if ((window as any).electronAPI) {
@@ -37,6 +40,13 @@ export const Navbar: React.FC<NavbarProps> = ({
       if ((window as any).electronAPI.onNetworkStatusChanged) {
         return (window as any).electronAPI.onNetworkStatusChanged((status: string) => {
           setNetStatus(status);
+        });
+      }
+      if ((window as any).electronAPI.checkForUpdates) {
+        (window as any).electronAPI.checkForUpdates().then((res: any) => {
+          if (res && res.hasUpdate) {
+            setHasUpdate(true);
+          }
         });
       }
     }
@@ -151,6 +161,19 @@ export const Navbar: React.FC<NavbarProps> = ({
               )}
             </div>
             
+            {onOpenUpdater && (
+              <button
+                onClick={onOpenUpdater}
+                title={hasUpdate ? "New update available!" : "Application Updater"}
+                className="relative p-2 text-[#8E9299] hover:text-white hover:bg-[#191D28] rounded-lg transition-colors border border-[#1E222A] flex items-center justify-center"
+              >
+                <RefreshCw className={`w-4 h-4 ${hasUpdate ? 'text-[#F27D26] animate-spin' : ''}`} />
+                {hasUpdate && (
+                  <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-[#F27D26] rounded-full border-2 border-[#0F1117] animate-pulse" />
+                )}
+              </button>
+            )}
+
             <button
               onClick={onOpenTutorial}
               title="Help / Tutorial"

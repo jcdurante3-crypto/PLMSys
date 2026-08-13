@@ -30,6 +30,7 @@ import { RegistryModal } from './components/RegistryModal';
 import { AdminLoginModal } from './components/AdminLoginModal';
 import { AdminDashboard } from './components/AdminDashboard';
 import { TutorialModal } from './components/TutorialModal';
+import { AutoUpdateModal } from './components/AutoUpdateModal';
 import { useAutoBackup } from './hooks/useAutoBackup';
 import { Shield } from 'lucide-react';
 import { getTodayStr, getSetTodayProduction } from './utils';
@@ -54,6 +55,8 @@ export default function App() {
   const [showAdminLoginModal, setShowAdminLoginModal] = useState(false);
   const [showRegistryModal, setShowRegistryModal] = useState(false);
   const [showTutorialModal, setShowTutorialModal] = useState(false);
+  const [showUpdaterModal, setShowUpdaterModal] = useState(false);
+  const [isPostUpdateWelcome, setIsPostUpdateWelcome] = useState(false);
 
   const [showScannerModal, setShowScannerModal] = useState(false);
   const [showCreateSetModal, setShowCreateSetModal] = useState(false);
@@ -143,6 +146,25 @@ export default function App() {
           }
         } catch (e) {
           console.error('Failed to get database status:', e);
+        }
+      }
+
+      if (window.electronAPI && window.electronAPI.getAppInfo && window.electronAPI.getLastSeenVersion) {
+        try {
+          const appInfo = await window.electronAPI.getAppInfo();
+          const lastSeen = await window.electronAPI.getLastSeenVersion();
+          
+          if (appInfo && appInfo.version && lastSeen) {
+            if (appInfo.version !== lastSeen && appInfo.version === '1.1.0') {
+              setIsPostUpdateWelcome(true);
+              setShowUpdaterModal(true);
+              if (window.electronAPI.setLastSeenVersion) {
+                await window.electronAPI.setLastSeenVersion(appInfo.version);
+              }
+            }
+          }
+        } catch (e) {
+          console.error('Error checking version history:', e);
         }
       }
     };
@@ -1137,6 +1159,10 @@ export default function App() {
         currentUser={currentUser}
         onOpenLogin={() => setShowLoginModal(true)}
         onOpenTutorial={() => setShowTutorialModal(true)}
+        onOpenUpdater={() => {
+          setIsPostUpdateWelcome(false);
+          setShowUpdaterModal(true);
+        }}
       />
 
       <main className="flex-1 w-full max-w-full px-4 sm:px-6 lg:px-8 py-6">
@@ -1326,6 +1352,12 @@ export default function App() {
           setActiveTab(tab);
           setSelectedSetId(null);
         }}
+      />
+
+      <AutoUpdateModal
+        isOpen={showUpdaterModal}
+        isPostUpdateWelcome={isPostUpdateWelcome}
+        onClose={() => setShowUpdaterModal(false)}
       />
     </div>
   );
