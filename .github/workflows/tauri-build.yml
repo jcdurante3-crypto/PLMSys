@@ -37,12 +37,19 @@ jobs:
           npm install
 
       - name: Build frontend
-        run: npm run build
+        shell: bash
+        env:
+          CI: false
+          NODE_ENV: production
+        run: |
+          npm run build
 
       - name: Build Tauri Windows App
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CI: false
+          NODE_ENV: production
         with:
           tagName: v__VERSION__
           releaseName: "PLMSys v__VERSION__"
