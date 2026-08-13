@@ -45,7 +45,6 @@
   "build": {
     "appId": "com.plm.system",
     "productName": "Plate Lifecycle Monitoring System",
-    "publisherName": "J.Durante",
     "directories": {
       "output": "release"
     },
