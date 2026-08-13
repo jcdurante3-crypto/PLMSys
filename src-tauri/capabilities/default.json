@@ -1,0 +1,9 @@
+{
+  "$schema": "https://schema.tauri.app/config/capability",
+  "identifier": "default",
+  "description": "Default permissions capability for PLMSys Tauri 2 application",
+  "windows": ["main"],
+  "permissions": [
+    "core:default"
+  ]
+}
