@@ -40,11 +40,24 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExportBackup, 
   const [updateTriggerMessage, setUpdateTriggerMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [clientStatuses, setClientStatuses] = useState<Record<string, any>>({});
 
-  // Database Lock Release State
+  // Database Lock Release State & Diagnostics
   const [isReleasingLock, setIsReleasingLock] = useState(false);
   const [lockReleaseResult, setLockReleaseResult] = useState<{ success: boolean; message?: string; error?: string } | null>(null);
+  const [lockDiag, setLockDiag] = useState<{
+    locked: boolean;
+    owner: string;
+    operation: string;
+    started: string;
+    heartbeat: string;
+    status: string;
+  } | null>(null);
 
   const handleForceReleaseLock = async () => {
+    const confirmed = window.confirm(
+      "Only release this lock if the owning computer is no longer performing a database operation.\n\nAre you absolutely sure you want to force unlock the database?"
+    );
+    if (!confirmed) return;
+
     setIsReleasingLock(true);
     setLockReleaseResult(null);
     try {
@@ -52,6 +65,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExportBackup, 
         const res = await (window as any).electronAPI.forceReleaseDatabaseLock();
         if (res.success) {
           setLockReleaseResult({ success: true, message: res.message || 'Database lock has been successfully cleared. All PCs can write now.' });
+          if ((window as any).electronAPI?.getDbStatus) {
+            const status = await (window as any).electronAPI.getDbStatus();
+            if (status?.lockDiagnostics) {
+              setLockDiag(status.lockDiagnostics);
+            }
+          }
         } else {
           setLockReleaseResult({ success: false, error: res.error || 'Failed to clear database lock.' });
         }
@@ -79,6 +98,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExportBackup, 
           console.error('Failed to load network settings:', err);
         }
       }
+      if ((window as any).electronAPI?.getDbStatus) {
+        try {
+          const status = await (window as any).electronAPI.getDbStatus();
+          if (status?.lockDiagnostics) {
+            setLockDiag(status.lockDiagnostics);
+          }
+        } catch (e) {}
+      }
       if ((window as any).electronAPI?.getUpdatePackageInfo) {
         try {
           const res = await (window as any).electronAPI.getUpdatePackageInfo();
@@ -101,6 +128,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExportBackup, 
         try {
           const statuses = await (window as any).electronAPI.getClientUpdateStatuses();
           if (statuses) setClientStatuses(statuses);
+        } catch (e) {}
+      }
+      if ((window as any).electronAPI?.getDbStatus) {
+        try {
+          const status = await (window as any).electronAPI.getDbStatus();
+          if (status?.lockDiagnostics) {
+            setLockDiag(status.lockDiagnostics);
+          }
         } catch (e) {}
       }
     }, 2000);
@@ -393,6 +428,47 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExportBackup, 
                 {isReleasingLock ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Shield className="w-3.5 h-3.5" />}
                 Force Unlock DB
               </button>
+            </div>
+
+            {/* Lock Diagnostics Panel */}
+            <div className="bg-[#191D28]/30 border border-[#1E222A]/80 rounded-lg p-3 space-y-2">
+              <div className="flex items-center justify-between border-b border-[#1E222A]/30 pb-2 text-xs">
+                <span className="text-xs font-semibold text-[#8E9299]">Database Lock Status:</span>
+                <span className={`font-bold px-2 py-0.5 rounded text-[10px] uppercase ${
+                  lockDiag?.locked 
+                    ? lockDiag.status === 'ACTIVE' 
+                      ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
+                      : 'bg-amber-500/10 text-amber-400 border border-amber-500/20' 
+                    : 'bg-zinc-500/10 text-zinc-400 border border-zinc-500/20'
+                }`}>
+                  {lockDiag?.locked ? `HELD (${lockDiag.status})` : 'FREE'}
+                </span>
+              </div>
+              
+              {lockDiag?.locked ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] font-mono leading-relaxed pt-1">
+                  <div>
+                    <span className="text-[#8E9299] block text-[10px] uppercase font-sans font-medium">Lock Owner:</span>
+                    <span className="text-white font-semibold">{lockDiag.owner || 'Unknown'}</span>
+                  </div>
+                  <div>
+                    <span className="text-[#8E9299] block text-[10px] uppercase font-sans font-medium">Operation:</span>
+                    <span className="text-amber-400 font-semibold">{lockDiag.operation || 'Writing'}</span>
+                  </div>
+                  <div>
+                    <span className="text-[#8E9299] block text-[10px] uppercase font-sans font-medium">Acquired At:</span>
+                    <span className="text-white">{lockDiag.started ? new Date(lockDiag.started).toLocaleTimeString() : 'N/A'}</span>
+                  </div>
+                  <div>
+                    <span className="text-[#8E9299] block text-[10px] uppercase font-sans font-medium">Last Heartbeat:</span>
+                    <span className="text-white">{lockDiag.heartbeat ? new Date(lockDiag.heartbeat).toLocaleTimeString() : 'N/A'}</span>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-[11px] text-[#8E9299] italic">
+                  No active lock detected. Database is ready for concurrent client operations.
+                </p>
+              )}
             </div>
 
             {lockReleaseResult && (

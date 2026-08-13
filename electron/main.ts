@@ -166,71 +166,179 @@ let dbErrorStatus: string | null = null;
 
 // Cross-PC Atomic File Locking for Shared LAN Storage
 const LOCK_DIR_NAME = '.plmsys.lock';
-const LOCK_TIMEOUT_MS = 10000; // 10 seconds max lock lifetime
-const MAX_ACQUIRE_WAIT_MS = 5000; // 5 seconds max wait to acquire lock
+const HEARTBEAT_INTERVAL_MS = 2000;
+const STALE_LOCK_GRACE_PERIOD_MS = 10000; // 10 seconds missing heartbeat
+const MAX_ACQUIRE_WAIT_MS = 15000; // 15 seconds max wait to acquire lock
 
-function acquireDatabaseLock(targetDir: string): () => void {
+// Recursive / Re-entrant lock tracking
+const clientId = `client_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+const os = require('os');
+const hostname = os.hostname ? os.hostname() : 'PC1';
+const username = process.env.USER || process.env.USERNAME || 'unknown';
+const pid = process.pid;
+
+let currentLockOwnerClientId: string | null = null;
+let currentLockedDir: string | null = null;
+let currentLockDepth = 0;
+let heartbeatIntervalId: NodeJS.Timeout | null = null;
+
+function cleanupLock(lockDirPath: string) {
+  if (heartbeatIntervalId) {
+    clearInterval(heartbeatIntervalId);
+    heartbeatIntervalId = null;
+  }
+  currentLockOwnerClientId = null;
+  currentLockedDir = null;
+  currentLockDepth = 0;
+  try {
+    if (fs.existsSync(lockDirPath)) {
+      fs.rmSync(lockDirPath, { recursive: true, force: true });
+      logToFile('info', `Lock directory ${lockDirPath} cleared successfully.`);
+    }
+  } catch (e) {
+    logToFile('error', `Failed to delete lock directory: ${e}`);
+  }
+}
+
+function acquireDatabaseLock(targetDir: string, operation: string = 'Database Write'): () => void {
   const lockDirPath = path.join(targetDir, LOCK_DIR_NAME);
   const lockMetaPath = path.join(lockDirPath, 'owner.json');
+
+  // Re-entrant lock check
+  if (currentLockOwnerClientId === clientId && currentLockedDir === targetDir) {
+    currentLockDepth++;
+    logToFile('info', `Re-entered lock for ${targetDir}. Depth: ${currentLockDepth}. Operation: ${operation}`);
+    return () => {
+      currentLockDepth--;
+      logToFile('info', `Released nested lock for ${targetDir}. Depth: ${currentLockDepth}`);
+      if (currentLockDepth === 0) {
+        cleanupLock(lockDirPath);
+      }
+    };
+  }
+
   const startTime = Date.now();
+  let attempts = 0;
 
   while (Date.now() - startTime < MAX_ACQUIRE_WAIT_MS) {
+    attempts++;
     try {
+      // mkdir is atomic across standard network systems (including SMB/UNC)
       fs.mkdirSync(lockDirPath);
-      try {
-        fs.writeFileSync(
-          lockMetaPath,
-          JSON.stringify({
-            pid: process.pid,
-            hostname: require('os').hostname ? require('os').hostname() : 'PC1',
-            time: Date.now(),
-          }),
-          'utf8'
-        );
-      } catch (e) {}
+
+      // Lock acquired! Write metadata
+      const now = Date.now();
+      const meta = {
+        clientId,
+        hostname,
+        username,
+        pid,
+        acquiredAt: now,
+        heartbeatAt: now,
+        operation,
+        lockVersion: 1
+      };
+
+      fs.writeFileSync(lockMetaPath, JSON.stringify(meta, null, 2), 'utf8');
+
+      currentLockOwnerClientId = clientId;
+      currentLockedDir = targetDir;
+      currentLockDepth = 1;
+
+      logToFile('info', `Acquired lock on ${targetDir} for operation "${operation}" (attempt ${attempts})`);
+
+      // Start periodic lease heartbeat
+      if (heartbeatIntervalId) {
+        clearInterval(heartbeatIntervalId);
+      }
+      heartbeatIntervalId = setInterval(() => {
+        try {
+          if (fs.existsSync(lockMetaPath)) {
+            const currentMetaStr = fs.readFileSync(lockMetaPath, 'utf8');
+            const currentMeta = JSON.parse(currentMetaStr);
+            if (currentMeta.clientId === clientId) {
+              currentMeta.heartbeatAt = Date.now();
+              fs.writeFileSync(lockMetaPath, JSON.stringify(currentMeta, null, 2), 'utf8');
+            }
+          }
+        } catch (err) {
+          logToFile('warn', `Failed to write heartbeat: ${err}`);
+        }
+      }, HEARTBEAT_INTERVAL_MS);
 
       return () => {
-        try {
-          if (fs.existsSync(lockDirPath)) {
-            fs.rmSync(lockDirPath, { recursive: true, force: true });
-          }
-        } catch (e) {}
+        currentLockDepth--;
+        if (currentLockDepth <= 0) {
+          cleanupLock(lockDirPath);
+        }
       };
     } catch (err: any) {
       if (err.code === 'EEXIST') {
+        // Lock already exists. Let's verify if the owner is still alive or stale
         try {
           if (fs.existsSync(lockMetaPath)) {
             const metaContent = fs.readFileSync(lockMetaPath, 'utf8');
             const meta = JSON.parse(metaContent);
-            const age = Date.now() - (meta.time || 0);
-            if (age > LOCK_TIMEOUT_MS || age < -LOCK_TIMEOUT_MS) {
-              logToFile('warn', `Stale lock directory detected (age: ${age}ms). Removing stale lock recursively.`);
-              try { fs.rmSync(lockDirPath, { recursive: true, force: true }); } catch (e) {}
+            const now = Date.now();
+            const heartbeatAge = now - (meta.heartbeatAt || meta.acquiredAt || 0);
+
+            // If heartbeat age exceeds grace period (including negative clock skews)
+            if (heartbeatAge > STALE_LOCK_GRACE_PERIOD_MS || heartbeatAge < -STALE_LOCK_GRACE_PERIOD_MS) {
+              logToFile('warn', `Stale lock detected! Owner: ${meta.hostname}/${meta.username}, heartbeat age: ${heartbeatAge}ms. Breaking lock.`);
+              try {
+                fs.rmSync(lockDirPath, { recursive: true, force: true });
+              } catch (rmErr) {
+                logToFile('error', `Failed to remove stale lock directory: ${rmErr}`);
+              }
               continue;
             }
-          } else if (fs.existsSync(lockDirPath)) {
+          } else {
+            // Lock exists but owner.json missing. Check directory age.
             const stats = fs.statSync(lockDirPath);
-            if (Date.now() - stats.mtimeMs > LOCK_TIMEOUT_MS) {
-              logToFile('warn', 'Stale lock directory without metadata detected. Removing stale lock recursively.');
-              try { fs.rmSync(lockDirPath, { recursive: true, force: true }); } catch (e) {}
+            const folderAge = Date.now() - stats.mtimeMs;
+            if (folderAge > STALE_LOCK_GRACE_PERIOD_MS) {
+              logToFile('warn', `Stale lock directory without metadata detected (age: ${folderAge}ms). Breaking lock.`);
+              try {
+                fs.rmSync(lockDirPath, { recursive: true, force: true });
+              } catch (rmErr) {
+                logToFile('error', `Failed to remove stale lock directory: ${rmErr}`);
+              }
               continue;
             }
           }
         } catch (e) {
-          logToFile('warn', `Error checking stale lock. Forcing removal of lock directory recursively.`);
-          try { fs.rmSync(lockDirPath, { recursive: true, force: true }); } catch (e) {}
+          logToFile('warn', `Error checking stale lock: ${e}. Breaking lock recursively.`);
+          try {
+            fs.rmSync(lockDirPath, { recursive: true, force: true });
+          } catch (rmErr) {}
+          continue;
         }
 
-        const delay = Math.floor(20 + Math.random() * 60);
+        // Bounded retry with jitter: 250ms, 500ms, 750ms, 1000ms...
+        const baseDelay = Math.min(attempts * 250, 1000);
+        const jitter = Math.floor(Math.random() * 100);
+        const delay = baseDelay + jitter;
+
         const lockWaitEnd = Date.now() + delay;
-        while (Date.now() < lockWaitEnd) {}
+        while (Date.now() < lockWaitEnd) {
+          // Sync blocking wait to ensure serial execution
+        }
       } else {
         throw err;
       }
     }
   }
 
-  throw new Error('Database is locked by another PC writing over LAN. Please try again in a moment.');
+  // Failed to acquire. Inspect current owner to provide clear, helpful error message
+  let ownerInfo = 'another computer';
+  try {
+    if (fs.existsSync(lockMetaPath)) {
+      const meta = JSON.parse(fs.readFileSync(lockMetaPath, 'utf8'));
+      ownerInfo = `${meta.hostname || 'PC'} / ${meta.username || 'User'} (${meta.operation || 'Writing'})`;
+    }
+  } catch (e) {}
+
+  throw new Error(`Database is currently being updated by ${ownerInfo || 'another user'}. Please wait...`);
 }
 
 const ALLOWED_TABLES = new Set([
@@ -625,7 +733,9 @@ function writeDb(data: any, table?: string, action?: string, args?: any[]) {
 
   try {
     // Acquire Cross-PC atomic lock before touching files
-    releaseLock = acquireDatabaseLock(targetDir);
+    const tableWord = table === 'sets' ? 'Plate Set' : table || 'Database';
+    const actionWord = action === 'add' ? 'Adding' : action === 'put' ? 'Saving' : action === 'update' ? 'Updating' : action === 'delete' ? 'Deleting' : action === 'clear' ? 'Clearing' : 'Modifying';
+    releaseLock = acquireDatabaseLock(targetDir, `${actionWord} ${tableWord}`);
 
     // Increment revision
     data._revision = (data._revision || 1) + 1;
@@ -928,7 +1038,9 @@ ipcMain.handle('db-action', async (event, { table, action, args, revision }) => 
     }
 
     // Acquire lock for mutation actions
-    releaseLock = acquireDatabaseLock(targetDir);
+    const tableWord = table === 'sets' ? 'Plate Set' : table;
+    const actionWord = action === 'add' ? 'Adding' : action === 'put' ? 'Saving' : action === 'update' ? 'Updating' : action === 'delete' ? 'Deleting' : action === 'clear' ? 'Clearing' : 'Modifying';
+    releaseLock = acquireDatabaseLock(targetDir, `${actionWord} ${tableWord}`);
     const dbData = readDb();
 
     if (!dbData[table] || !Array.isArray(dbData[table])) {
@@ -1144,10 +1256,30 @@ ipcMain.handle('force-release-database-lock', async () => {
     const targetPath = getDatabasePath();
     const targetDir = path.dirname(targetPath);
     const lockDirPath = path.join(targetDir, LOCK_DIR_NAME);
+    let message = 'Database lock has been successfully cleared. All PCs can write now.';
+    
     if (fs.existsSync(lockDirPath)) {
       fs.rmSync(lockDirPath, { recursive: true, force: true });
       logToFile('info', 'Database lock directory cleared successfully via manual override.');
-      return { success: true };
+      
+      // Append entry to auditLogs in database
+      try {
+        const dbData = readDb();
+        if (dbData && Array.isArray(dbData.auditLogs)) {
+          dbData.auditLogs.push({
+            id: `audit-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+            timestamp: new Date().toISOString(),
+            operator: 'Administrator',
+            action: 'MANUAL_LOCK_RELEASE',
+            details: 'Administrator manually forced database lock release.'
+          });
+          writeDb(dbData, 'auditLogs', 'add');
+        }
+      } catch (logErr) {
+        logToFile('warn', `Failed to write manual lock release to audit logs: ${logErr}`);
+      }
+      
+      return { success: true, message };
     }
     return { success: true, message: 'No active lock found.' };
   } catch (err: any) {
