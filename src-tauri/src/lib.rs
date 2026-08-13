@@ -113,7 +113,7 @@ fn acquire_lock(target_dir: &Path, operation: &str, client_id: &str) -> Result<P
     let lock_dir = target_dir.join(LOCK_DIR_NAME);
     let lock_meta = lock_dir.join("owner.json");
     let start_time = SystemTime::now();
-    let hostname = hostname::get().map(|h| h.to_string_lossy().to_string()).unwrap_or_else(|_| "PC".to_string());
+    let hostname = std::env::var("COMPUTERNAME").or_else(|_| std::env::var("HOSTNAME")).unwrap_or_else(|_| "PC".to_string());
     let username = std::env::var("USER").or_else(|_| std::env::var("USERNAME")).unwrap_or_else(|_| "User".to_string());
     let pid = std::process::id();
     

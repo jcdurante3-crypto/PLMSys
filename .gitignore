@@ -5,6 +5,7 @@ dist-electron/
 release/
 data/
 data_dev/
+src-tauri/target/
 coverage/
 .DS_Store
 *.log
