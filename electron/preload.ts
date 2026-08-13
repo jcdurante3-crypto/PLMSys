@@ -10,6 +10,7 @@ export interface ElectronAPI {
   dbAction: (table: string, action: string, args: any[]) => Promise<any>;
   factoryReset: (setCount: number) => Promise<{ success: boolean; error?: string }>;
   getDbStatus: () => Promise<{ success: boolean; error: string | null }>;
+  forceReleaseDatabaseLock: () => Promise<{ success: boolean; error?: string }>;
 }
 
 const electronAPI = {
@@ -23,6 +24,7 @@ const electronAPI = {
     ipcRenderer.invoke('db-action', { table, action, args, revision }),
   factoryReset: (setCount: number) => ipcRenderer.invoke('factory-reset', { setCount }),
   getDbStatus: () => ipcRenderer.invoke('get-db-status'),
+  forceReleaseDatabaseLock: () => ipcRenderer.invoke('force-release-database-lock'),
 
   // Network & Collaboration IPCs
   getNetworkSettings: () => ipcRenderer.invoke('get-network-settings'),

@@ -182,7 +182,7 @@ function acquireDatabaseLock(targetDir: string): () => void {
           lockMetaPath,
           JSON.stringify({
             pid: process.pid,
-            hostname: require('os').hostname(),
+            hostname: require('os').hostname ? require('os').hostname() : 'PC1',
             time: Date.now(),
           }),
           'utf8'
@@ -191,13 +191,8 @@ function acquireDatabaseLock(targetDir: string): () => void {
 
       return () => {
         try {
-          if (fs.existsSync(lockMetaPath)) {
-            fs.unlinkSync(lockMetaPath);
-          }
-        } catch (e) {}
-        try {
           if (fs.existsSync(lockDirPath)) {
-            fs.rmdirSync(lockDirPath);
+            fs.rmSync(lockDirPath, { recursive: true, force: true });
           }
         } catch (e) {}
       };
@@ -207,22 +202,23 @@ function acquireDatabaseLock(targetDir: string): () => void {
           if (fs.existsSync(lockMetaPath)) {
             const metaContent = fs.readFileSync(lockMetaPath, 'utf8');
             const meta = JSON.parse(metaContent);
-            if (Date.now() - (meta.time || 0) > LOCK_TIMEOUT_MS) {
-              logToFile('warn', `Stale lock directory detected (age: ${Date.now() - meta.time}ms). Removing stale lock.`);
-              try { fs.unlinkSync(lockMetaPath); } catch (e) {}
-              try { fs.rmdirSync(lockDirPath); } catch (e) {}
+            const age = Date.now() - (meta.time || 0);
+            if (age > LOCK_TIMEOUT_MS || age < -LOCK_TIMEOUT_MS) {
+              logToFile('warn', `Stale lock directory detected (age: ${age}ms). Removing stale lock recursively.`);
+              try { fs.rmSync(lockDirPath, { recursive: true, force: true }); } catch (e) {}
               continue;
             }
           } else if (fs.existsSync(lockDirPath)) {
             const stats = fs.statSync(lockDirPath);
             if (Date.now() - stats.mtimeMs > LOCK_TIMEOUT_MS) {
-              logToFile('warn', 'Stale lock directory without metadata detected. Removing stale lock directory.');
-              try { fs.rmdirSync(lockDirPath); } catch (e) {}
+              logToFile('warn', 'Stale lock directory without metadata detected. Removing stale lock recursively.');
+              try { fs.rmSync(lockDirPath, { recursive: true, force: true }); } catch (e) {}
               continue;
             }
           }
         } catch (e) {
-          try { fs.rmdirSync(lockDirPath); } catch (e) {}
+          logToFile('warn', `Error checking stale lock. Forcing removal of lock directory recursively.`);
+          try { fs.rmSync(lockDirPath, { recursive: true, force: true }); } catch (e) {}
         }
 
         const delay = Math.floor(20 + Math.random() * 60);
@@ -1140,6 +1136,25 @@ ipcMain.handle('get-app-info', async () => {
     version: app.getVersion(),
     dataDirectory: dirs.root,
   };
+});
+
+ipcMain.handle('force-release-database-lock', async () => {
+  logToFile('info', 'IPC force-release-database-lock called.');
+  try {
+    const targetPath = getDatabasePath();
+    const targetDir = path.dirname(targetPath);
+    const lockDirPath = path.join(targetDir, LOCK_DIR_NAME);
+    if (fs.existsSync(lockDirPath)) {
+      fs.rmSync(lockDirPath, { recursive: true, force: true });
+      logToFile('info', 'Database lock directory cleared successfully via manual override.');
+      return { success: true };
+    }
+    return { success: true, message: 'No active lock found.' };
+  } catch (err: any) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    logToFile('error', `Failed to manually clear database lock: ${errMsg}`);
+    return { success: false, error: errMsg };
+  }
 });
 
 // Network & Collaboration IPC Handlers

@@ -208,6 +208,7 @@ declare global {
       dbAction: (table: string, action: string, args: any[], revision?: number) => Promise<any>;
       factoryReset: (setCount: number) => Promise<{ success: boolean; error?: string }>;
       getDbStatus: () => Promise<{ success: boolean; error: string | null }>;
+      forceReleaseDatabaseLock: () => Promise<{ success: boolean; error?: string }>;
       
       // Network & Collaboration IPCs
       getNetworkSettings: () => Promise<NetworkSettings>;

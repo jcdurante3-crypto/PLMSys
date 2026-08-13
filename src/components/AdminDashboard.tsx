@@ -40,6 +40,32 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExportBackup, 
   const [updateTriggerMessage, setUpdateTriggerMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [clientStatuses, setClientStatuses] = useState<Record<string, any>>({});
 
+  // Database Lock Release State
+  const [isReleasingLock, setIsReleasingLock] = useState(false);
+  const [lockReleaseResult, setLockReleaseResult] = useState<{ success: boolean; message?: string; error?: string } | null>(null);
+
+  const handleForceReleaseLock = async () => {
+    setIsReleasingLock(true);
+    setLockReleaseResult(null);
+    try {
+      if ((window as any).electronAPI?.forceReleaseDatabaseLock) {
+        const res = await (window as any).electronAPI.forceReleaseDatabaseLock();
+        if (res.success) {
+          setLockReleaseResult({ success: true, message: res.message || 'Database lock has been successfully cleared. All PCs can write now.' });
+        } else {
+          setLockReleaseResult({ success: false, error: res.error || 'Failed to clear database lock.' });
+        }
+      } else {
+        await new Promise((r) => setTimeout(r, 500));
+        setLockReleaseResult({ success: true, message: 'Database lock has been successfully cleared (Preview Mode).' });
+      }
+    } catch (err: any) {
+      setLockReleaseResult({ success: false, error: err.message || 'Error releasing lock.' });
+    } finally {
+      setIsReleasingLock(false);
+    }
+  };
+
   useEffect(() => {
     const fetchNetSettings = async () => {
       if ((window as any).electronAPI?.getNetworkSettings) {
@@ -343,6 +369,38 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExportBackup, 
                     {testResult.latencyMs} ms
                   </span>
                 )}
+              </div>
+            )}
+          </div>
+
+          {/* LAN Write Lock Recovery / Override Section */}
+          <div className="space-y-3 pt-4 border-t border-[#1E222A]/50">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <span className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                  <Database className="w-3.5 h-3.5 text-amber-500" /> LAN Write Lock Recovery
+                </span>
+                <p className="text-[11px] text-[#8E9299] mt-0.5 leading-relaxed">
+                  If another client computer crashes or disconnects while writing, the database write lock can get stuck, preventing others from writing. Press below to clear it.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleForceReleaseLock}
+                disabled={isReleasingLock}
+                className="flex items-center justify-center gap-1.5 px-4 py-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 hover:border-amber-500/50 disabled:opacity-50 rounded-lg text-xs font-bold cursor-pointer transition-colors whitespace-nowrap"
+              >
+                {isReleasingLock ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Shield className="w-3.5 h-3.5" />}
+                Force Unlock DB
+              </button>
+            </div>
+
+            {lockReleaseResult && (
+              <div className={`p-3 rounded-lg border text-xs flex items-center justify-between ${lockReleaseResult.success ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border-rose-500/20 text-rose-400'}`}>
+                <div className="flex items-center gap-2">
+                  {lockReleaseResult.success ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
+                  <span>{lockReleaseResult.success ? lockReleaseResult.message : `Failed to clear lock: ${lockReleaseResult.error}`}</span>
+                </div>
               </div>
             )}
           </div>
