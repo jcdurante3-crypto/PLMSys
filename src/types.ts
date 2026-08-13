@@ -221,7 +221,15 @@ declare global {
       // Auto-Update IPCs
       checkForUpdates: () => Promise<UpdateInfo>;
       startAutoUpdate: () => Promise<{ success: boolean; error?: string }>;
+      getUpdatePackageInfo: () => Promise<{ hasUpdate: boolean; manifest: any }>;
+      publishUpdatePackage: (data: any) => Promise<{ success: boolean; manifest?: any; error?: string }>;
+      adminInitiateUpdateAll: (userRole: string) => Promise<{ success: boolean; secondsLeft?: number; error?: string }>;
+      getClientUpdateStatuses: () => Promise<Record<string, any>>;
       onUpdateProgress: (callback: (progress: UpdateProgress) => void) => () => void;
+      onAdminUpdateInitiated: (callback: (payload: any) => void) => () => void;
+      onAdminUpdateCountdown: (callback: (payload: any) => void) => () => void;
+      onAdminUpdateCancelled: (callback: (payload: any) => void) => () => void;
+      onExecuteAutoUpdateNow: (callback: (payload: any) => void) => () => void;
       getLastSeenVersion: () => Promise<string>;
       setLastSeenVersion: (version: string) => Promise<void>;
       getChangelog: () => Promise<{ version: string; sections: Record<string, string[]> }>;

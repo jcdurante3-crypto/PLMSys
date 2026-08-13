@@ -44,10 +44,34 @@ const electronAPI = {
   // Auto-Update IPCs
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
   startAutoUpdate: () => ipcRenderer.invoke('start-auto-update'),
+  getUpdatePackageInfo: () => ipcRenderer.invoke('get-update-package-info'),
+  publishUpdatePackage: (data: any) => ipcRenderer.invoke('publish-update-package', data),
+  adminInitiateUpdateAll: (userRole: string) => ipcRenderer.invoke('admin-initiate-update-all', { userRole }),
+  getClientUpdateStatuses: () => ipcRenderer.invoke('get-client-update-statuses'),
   onUpdateProgress: (callback: (progress: any) => void) => {
     const handler = (_event: any, progress: any) => callback(progress);
     ipcRenderer.on('update-progress', handler);
     return () => ipcRenderer.removeListener('update-progress', handler);
+  },
+  onAdminUpdateInitiated: (callback: (payload: any) => void) => {
+    const handler = (_event: any, payload: any) => callback(payload);
+    ipcRenderer.on('admin-update-initiated', handler);
+    return () => ipcRenderer.removeListener('admin-update-initiated', handler);
+  },
+  onAdminUpdateCountdown: (callback: (payload: any) => void) => {
+    const handler = (_event: any, payload: any) => callback(payload);
+    ipcRenderer.on('admin-update-countdown', handler);
+    return () => ipcRenderer.removeListener('admin-update-countdown', handler);
+  },
+  onAdminUpdateCancelled: (callback: (payload: any) => void) => {
+    const handler = (_event: any, payload: any) => callback(payload);
+    ipcRenderer.on('admin-update-cancelled', handler);
+    return () => ipcRenderer.removeListener('admin-update-cancelled', handler);
+  },
+  onExecuteAutoUpdateNow: (callback: (payload: any) => void) => {
+    const handler = (_event: any, payload: any) => callback(payload);
+    ipcRenderer.on('execute-auto-update-now', handler);
+    return () => ipcRenderer.removeListener('execute-auto-update-now', handler);
   },
   getLastSeenVersion: () => ipcRenderer.invoke('get-last-seen-version'),
   setLastSeenVersion: (version: string) => ipcRenderer.invoke('set-last-seen-version', version),

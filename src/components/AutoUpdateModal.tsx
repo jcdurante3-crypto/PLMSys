@@ -283,12 +283,13 @@ export const AutoUpdateModal: React.FC<AutoUpdateModalProps> = ({
 
                 {updateInfo.changelog && Object.keys(updateInfo.changelog).length > 0 ? (
                   <div className="space-y-3 max-h-60 overflow-y-auto pr-1">
-                    {Object.entries(updateInfo.changelog).map(([section, items]) => (
-                      items.length > 0 && (
+                    {Object.entries(updateInfo.changelog).map(([section, items]) => {
+                      const list = (items as string[]) || [];
+                      return list.length > 0 && (
                         <div key={section} className="space-y-1">
                           <h4 className="text-[11px] font-bold uppercase text-[#8E9299] tracking-wider">{section}</h4>
                           <ul className="space-y-1 text-xs text-gray-300">
-                            {items.map((item, idx) => (
+                            {list.map((item, idx) => (
                               <li key={idx} className="flex items-start gap-2">
                                 <span className="text-[#F27D26] font-bold mt-0.5">•</span>
                                 <span>{item}</span>
@@ -296,8 +297,8 @@ export const AutoUpdateModal: React.FC<AutoUpdateModalProps> = ({
                             ))}
                           </ul>
                         </div>
-                      )
-                    ))}
+                      );
+                    })}
                   </div>
                 ) : (
                   <ul className="space-y-2 text-xs text-gray-300">

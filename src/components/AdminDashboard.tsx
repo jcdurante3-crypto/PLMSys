@@ -24,6 +24,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExportBackup, 
   const [isSavingNet, setIsSavingNet] = useState(false);
   const [saveNetMessage, setSaveNetMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
+  // Software Updates State
+  const [updateVersion, setUpdateVersion] = useState('1.1.0');
+  const [updatePlatform, setUpdatePlatform] = useState('Windows Portable / Linux AppImage');
+  const [updateFileName, setUpdateFileName] = useState('PLMSys-v1.1.0-update.pkg');
+  const [updateNewNotes, setUpdateNewNotes] = useState('Multi-PC LAN Sync with atomic cross-PC locking, Centralized Administrator-Controlled Updates');
+  const [updateImprovedNotes, setUpdateImprovedNotes] = useState('Verified pre-update database safety backups');
+  const [updateFixedNotes, setUpdateFixedNotes] = useState('Concurrent LAN edit conflict protection');
+  const [isPublishing, setIsPublishing] = useState(false);
+  const [publishMessage, setPublishMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [publishedManifest, setPublishedManifest] = useState<any>(null);
+  
+  const [showUpdateConfirmModal, setShowUpdateConfirmModal] = useState(false);
+  const [isInitiatingUpdate, setIsInitiatingUpdate] = useState(false);
+  const [updateTriggerMessage, setUpdateTriggerMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [clientStatuses, setClientStatuses] = useState<Record<string, any>>({});
+
   useEffect(() => {
     const fetchNetSettings = async () => {
       if ((window as any).electronAPI?.getNetworkSettings) {
@@ -37,9 +53,93 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExportBackup, 
           console.error('Failed to load network settings:', err);
         }
       }
+      if ((window as any).electronAPI?.getUpdatePackageInfo) {
+        try {
+          const res = await (window as any).electronAPI.getUpdatePackageInfo();
+          if (res?.manifest) {
+            setPublishedManifest(res.manifest);
+          }
+        } catch (e) {}
+      }
+      if ((window as any).electronAPI?.getClientUpdateStatuses) {
+        try {
+          const statuses = await (window as any).electronAPI.getClientUpdateStatuses();
+          if (statuses) setClientStatuses(statuses);
+        } catch (e) {}
+      }
     };
     fetchNetSettings();
+
+    const interval = setInterval(async () => {
+      if ((window as any).electronAPI?.getClientUpdateStatuses) {
+        try {
+          const statuses = await (window as any).electronAPI.getClientUpdateStatuses();
+          if (statuses) setClientStatuses(statuses);
+        } catch (e) {}
+      }
+    }, 2000);
+
+    return () => clearInterval(interval);
   }, []);
+
+  const handlePublishPackage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsPublishing(true);
+    setPublishMessage(null);
+    try {
+      if ((window as any).electronAPI?.publishUpdatePackage) {
+        const res = await (window as any).electronAPI.publishUpdatePackage({
+          userRole: 'ADMIN',
+          version: updateVersion.trim(),
+          platform: updatePlatform.trim(),
+          fileName: updateFileName.trim(),
+          changelog: {
+            new: updateNewNotes.split(',').map((s) => s.trim()).filter(Boolean),
+            improved: updateImprovedNotes.split(',').map((s) => s.trim()).filter(Boolean),
+            fixed: updateFixedNotes.split(',').map((s) => s.trim()).filter(Boolean)
+          }
+        });
+
+        if (res.success) {
+          setPublishMessage({ type: 'success', text: `Update package v${updateVersion} published successfully to shared network location.` });
+          setPublishedManifest(res.manifest);
+        } else {
+          setPublishMessage({ type: 'error', text: res.error || 'Failed to publish update package.' });
+        }
+      } else {
+        await new Promise((r) => setTimeout(r, 500));
+        setPublishMessage({ type: 'success', text: `Update package v${updateVersion} published successfully (Preview Mode).` });
+      }
+    } catch (err: any) {
+      setPublishMessage({ type: 'error', text: err.message || 'Error publishing package.' });
+    } finally {
+      setIsPublishing(false);
+    }
+  };
+
+  const handleTriggerUpdateAll = async () => {
+    setIsInitiatingUpdate(true);
+    setUpdateTriggerMessage(null);
+    try {
+      if ((window as any).electronAPI?.adminInitiateUpdateAll) {
+        const res = await (window as any).electronAPI.adminInitiateUpdateAll('ADMIN');
+        if (res.success) {
+          setUpdateTriggerMessage({ type: 'success', text: 'System update broadcasted to all connected clients! 1-minute countdown active.' });
+          setShowUpdateConfirmModal(false);
+        } else {
+          setUpdateTriggerMessage({ type: 'error', text: res.error || 'Failed to initiate update.' });
+        }
+      } else {
+        await new Promise((r) => setTimeout(r, 400));
+        setUpdateTriggerMessage({ type: 'success', text: 'System update initiated (Preview Mode).' });
+        setShowUpdateConfirmModal(false);
+      }
+    } catch (err: any) {
+      setUpdateTriggerMessage({ type: 'error', text: err.message || 'Error triggering update.' });
+    } finally {
+      setIsInitiatingUpdate(false);
+    }
+  };
 
   const handleTestConnection = async () => {
     if (!networkPath.trim()) {
@@ -266,6 +366,268 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExportBackup, 
               Save Network Settings
             </button>
           </div>
+        </div>
+      </motion.div>
+
+      {/* Centralized Software Updates Card */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="bg-[#14171F] border border-[#1E222A] rounded-xl overflow-hidden shadow-xl"
+      >
+        <div className="p-6 border-b border-[#1E222A] bg-[#191D28]/50 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <RefreshCw className="w-5 h-5 text-[#F27D26]" />
+            <div>
+              <h3 className="font-bold text-white uppercase text-sm tracking-wider">Centralized Software Updates & Network Deployment</h3>
+              <p className="text-xs text-[#8E9299] mt-0.5">Upload, stage, and trigger network-wide client software updates with live progress monitoring</p>
+            </div>
+          </div>
+          <span className="px-2.5 py-1 rounded text-xs font-bold uppercase tracking-wider bg-[#F27D26]/10 text-[#F27D26] border border-[#F27D26]/20">
+            Admin Controlled
+          </span>
+        </div>
+
+        <div className="p-6 space-y-6">
+          {updateTriggerMessage && (
+            <div className={`p-3 rounded-lg text-xs font-semibold flex items-center gap-2 ${updateTriggerMessage.type === 'success' ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border border-rose-500/20 text-rose-400'}`}>
+              {updateTriggerMessage.type === 'success' ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
+              <span>{updateTriggerMessage.text}</span>
+            </div>
+          )}
+
+          {/* Published Package Banner & UPDATE ALL SOFTWARE Trigger */}
+          <div className="bg-[#0A0B0E] p-5 rounded-xl border border-[#1E222A] space-y-4">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-[#1E222A] pb-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-white uppercase tracking-wider">Published Update Package</span>
+                  <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-400 text-[10px] font-mono font-bold rounded uppercase">
+                    Ready for Deployment
+                  </span>
+                </div>
+                <p className="text-xs text-[#8E9299] mt-1 font-mono">
+                  Version: <span className="text-white font-bold">{publishedManifest?.version || '1.1.0'}</span> | Platform: <span className="text-gray-300">{publishedManifest?.platform || 'Windows Portable / Linux AppImage'}</span>
+                </p>
+                <p className="text-[11px] text-[#8E9299] mt-0.5 font-mono">
+                  Checksum: <span className="text-amber-400">{publishedManifest?.checksum || 'sha256:e3b0c44298fc1c149afbf4c8...'}</span>
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowUpdateConfirmModal(true)}
+                className="flex items-center gap-2 px-6 py-3 bg-[#F27D26] hover:bg-[#d66a1a] text-white rounded-xl text-xs font-bold uppercase tracking-wider shadow-lg shadow-[#F27D26]/20 transition-all cursor-pointer whitespace-nowrap"
+              >
+                <RefreshCw className="w-4 h-4 animate-spin-slow" />
+                UPDATE ALL SOFTWARE
+              </button>
+            </div>
+
+            {/* Live Client Status Table */}
+            <div className="space-y-3 pt-1">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                  <Activity className="w-4 h-4 text-sky-400" />
+                  Live Network PC Deployment Status
+                </span>
+                {(() => {
+                  const hosts = Object.keys(clientStatuses);
+                  const total = Math.max(hosts.length, 1);
+                  const updatedCount = hosts.filter((h) => clientStatuses[h]?.status === 'UPDATED').length;
+                  const pendingCount = total - updatedCount;
+                  return (
+                    <span className="text-[11px] font-mono text-[#8E9299]">
+                      <span className="text-emerald-400 font-bold">{updatedCount} of {total}</span> computers updated
+                      {pendingCount > 0 && <span className="text-amber-400 ml-1">({pendingCount} pending/offline)</span>}
+                    </span>
+                  );
+                })()}
+              </div>
+
+              <div className="overflow-x-auto border border-[#1E222A] rounded-lg">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-[#14171F] border-b border-[#1E222A] text-[10px] uppercase font-bold text-[#8E9299]">
+                      <th className="p-2.5">Host Computer</th>
+                      <th className="p-2.5">Current Version</th>
+                      <th className="p-2.5">Deployment Status</th>
+                      <th className="p-2.5 text-right">Last Heartbeat</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#1E222A] text-xs font-mono">
+                    {Object.keys(clientStatuses).length === 0 ? (
+                      <tr>
+                        <td className="p-3 text-white font-semibold">PC1 (This Computer)</td>
+                        <td className="p-3 text-gray-400">v1.1.0</td>
+                        <td className="p-3">
+                          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] font-bold">
+                            <CheckCircle2 className="w-3 h-3" /> UPDATED ✓
+                          </span>
+                        </td>
+                        <td className="p-3 text-right text-[#8E9299]">Just now</td>
+                      </tr>
+                    ) : (
+                      Object.entries(clientStatuses).map(([hostKey, info]: [string, any]) => (
+                        <tr key={hostKey} className="hover:bg-[#14171F]/50">
+                          <td className="p-2.5 text-white font-semibold flex items-center gap-2">
+                            <HardDrive className="w-3.5 h-3.5 text-sky-400" />
+                            {hostKey}
+                          </td>
+                          <td className="p-2.5 text-gray-300">v{info.version || '1.1.0'}</td>
+                          <td className="p-2.5">
+                            {info.status === 'UPDATED' && (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] font-bold">
+                                <CheckCircle2 className="w-3 h-3" /> UPDATED ✓
+                              </span>
+                            )}
+                            {info.status === 'DOWNLOADING' && (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-sky-500/10 text-sky-400 border border-sky-500/20 text-[10px] font-bold">
+                                <RefreshCw className="w-3 h-3 animate-spin" /> DOWNLOADING {info.percent}%
+                              </span>
+                            )}
+                            {info.status === 'RESTARTING' && (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[10px] font-bold">
+                                <RefreshCw className="w-3 h-3 animate-spin" /> RESTARTING
+                              </span>
+                            )}
+                            {info.status !== 'UPDATED' && info.status !== 'DOWNLOADING' && info.status !== 'RESTARTING' && (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[10px] font-bold">
+                                UPDATE PENDING / OFFLINE
+                              </span>
+                            )}
+                          </td>
+                          <td className="p-2.5 text-right text-[#8E9299] text-[11px]">
+                            {info.updatedAt ? new Date(info.updatedAt).toLocaleTimeString() : 'Recent'}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          {/* Upload New Package Form */}
+          <form onSubmit={handlePublishPackage} className="space-y-4 pt-2 border-t border-[#1E222A]">
+            <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+              <Upload className="w-4 h-4 text-[#F27D26]" />
+              Publish New Update Package
+            </h4>
+
+            {publishMessage && (
+              <div className={`p-3 rounded-lg text-xs font-semibold flex items-center gap-2 ${publishMessage.type === 'success' ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border border-rose-500/20 text-rose-400'}`}>
+                {publishMessage.type === 'success' ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
+                <span>{publishMessage.text}</span>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label className="text-[10px] font-bold text-[#8E9299] uppercase tracking-wider block mb-1">
+                  Target Version
+                </label>
+                <input
+                  type="text"
+                  value={updateVersion}
+                  onChange={(e) => setUpdateVersion(e.target.value)}
+                  placeholder="1.1.0"
+                  className="w-full px-3 py-2 bg-[#0A0B0E] border border-[#1E222A] text-white rounded-lg text-xs font-mono focus:outline-none focus:border-[#F27D26]"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold text-[#8E9299] uppercase tracking-wider block mb-1">
+                  Target Platform
+                </label>
+                <input
+                  type="text"
+                  value={updatePlatform}
+                  onChange={(e) => setUpdatePlatform(e.target.value)}
+                  placeholder="Windows Portable / Linux AppImage"
+                  className="w-full px-3 py-2 bg-[#0A0B0E] border border-[#1E222A] text-white rounded-lg text-xs focus:outline-none focus:border-[#F27D26]"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold text-[#8E9299] uppercase tracking-wider block mb-1">
+                  Package Filename
+                </label>
+                <input
+                  type="text"
+                  value={updateFileName}
+                  onChange={(e) => setUpdateFileName(e.target.value)}
+                  placeholder="PLMSys-v1.1.0-update.pkg"
+                  className="w-full px-3 py-2 bg-[#0A0B0E] border border-[#1E222A] text-white rounded-lg text-xs font-mono focus:outline-none focus:border-[#F27D26]"
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-[10px] font-bold text-[#8E9299] uppercase tracking-wider block mb-1">
+                  Changelog: NEW Features (comma separated)
+                </label>
+                <input
+                  type="text"
+                  value={updateNewNotes}
+                  onChange={(e) => setUpdateNewNotes(e.target.value)}
+                  placeholder="Feature 1, Feature 2"
+                  className="w-full px-3 py-2 bg-[#0A0B0E] border border-[#1E222A] text-white rounded-lg text-xs focus:outline-none focus:border-[#F27D26]"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold text-[#8E9299] uppercase tracking-wider block mb-1">
+                  Changelog: IMPROVED Features (comma separated)
+                </label>
+                <input
+                  type="text"
+                  value={updateImprovedNotes}
+                  onChange={(e) => setUpdateImprovedNotes(e.target.value)}
+                  placeholder="Improvement 1, Improvement 2"
+                  className="w-full px-3 py-2 bg-[#0A0B0E] border border-[#1E222A] text-white rounded-lg text-xs focus:outline-none focus:border-[#F27D26]"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold text-[#8E9299] uppercase tracking-wider block mb-1">
+                  Changelog: FIXED Features (comma separated)
+                </label>
+                <input
+                  type="text"
+                  value={updateFixedNotes}
+                  onChange={(e) => setUpdateFixedNotes(e.target.value)}
+                  placeholder="Fix 1, Fix 2"
+                  className="w-full px-3 py-2 bg-[#0A0B0E] border border-[#1E222A] text-white rounded-lg text-xs focus:outline-none focus:border-[#F27D26]"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <button
+                type="submit"
+                disabled={isPublishing}
+                className="flex items-center gap-2 px-5 py-2.5 bg-[#191D28] hover:bg-[#252A38] border border-[#1E222A] text-white rounded-lg text-xs font-bold uppercase tracking-wider transition-all cursor-pointer disabled:opacity-50"
+              >
+                {isPublishing ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    Publishing...
+                  </>
+                ) : (
+                  <>
+                    <Upload className="w-4 h-4 text-[#F27D26]" />
+                    Publish Update Package to Network Storage
+                  </>
+                )}
+              </button>
+            </div>
+          </form>
         </div>
       </motion.div>
 
@@ -517,6 +879,75 @@ Do you want to continue?
                 </div>
               </>
             )}
+          </div>
+        </div>
+      )}
+      {/* Trigger Update Confirmation Modal */}
+      {showUpdateConfirmModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fadeIn">
+          <div className="bg-[#14171F] border border-[#F27D26]/40 rounded-xl p-6 w-full max-w-lg space-y-5 shadow-2xl relative">
+            <div className="flex items-start justify-between border-b border-[#1E222A] pb-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-[#F27D26]/10 border border-[#F27D26]/20 rounded-lg text-[#F27D26]">
+                  <RefreshCw className="w-5 h-5 animate-spin-slow" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white uppercase tracking-tight">Initiate System-Wide Update</h3>
+                  <p className="text-xs text-[#8E9299]">Broadcast software update to all network client computers</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowUpdateConfirmModal(false)}
+                className="text-gray-400 hover:text-white p-1 rounded-lg transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-4 bg-[#0A0B0E] rounded-lg border border-[#1E222A] space-y-3">
+              <div className="flex items-center gap-2 text-amber-400 text-xs font-bold uppercase tracking-wider">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>Notice to Administrator</span>
+              </div>
+              <p className="text-xs text-gray-200 leading-relaxed font-sans">
+                All connected PLMSys users will be notified and disconnected after a 1-minute warning.
+              </p>
+              <div className="pt-2 text-[11px] text-[#8E9299] font-mono border-t border-[#1E222A] space-y-1">
+                <div>• Target Package Version: <span className="text-white font-bold">{publishedManifest?.version || '1.1.0'}</span></div>
+                <div>• Maintenance Mode: Enforced at countdown expiration</div>
+                <div>• Verified Pre-Update Backup: Automated prior to update execution</div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2 border-t border-[#1E222A]">
+              <button
+                type="button"
+                disabled={isInitiatingUpdate}
+                onClick={() => setShowUpdateConfirmModal(false)}
+                className="px-4 py-2 bg-[#191D28] hover:bg-[#252A38] border border-[#1E222A] text-gray-300 rounded-lg text-xs font-semibold disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isInitiatingUpdate}
+                onClick={handleTriggerUpdateAll}
+                className="flex items-center gap-2 px-5 py-2 bg-[#F27D26] hover:bg-[#d66a1a] text-white rounded-lg text-xs font-bold shadow-md cursor-pointer transition-all disabled:opacity-50"
+              >
+                {isInitiatingUpdate ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    Broadcasting...
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="w-4 h-4" />
+                    Confirm & Trigger Update All Software
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

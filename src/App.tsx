@@ -31,6 +31,7 @@ import { AdminLoginModal } from './components/AdminLoginModal';
 import { AdminDashboard } from './components/AdminDashboard';
 import { TutorialModal } from './components/TutorialModal';
 import { AutoUpdateModal } from './components/AutoUpdateModal';
+import { AdminUpdateNotificationModal } from './components/AdminUpdateNotificationModal';
 import { useAutoBackup } from './hooks/useAutoBackup';
 import { Shield } from 'lucide-react';
 import { getTodayStr, getSetTodayProduction } from './utils';
@@ -61,6 +62,11 @@ export default function App() {
   const [showScannerModal, setShowScannerModal] = useState(false);
   const [showCreateSetModal, setShowCreateSetModal] = useState(false);
   const [showLogProductionModal, setShowLogProductionModal] = useState(false);
+  const [showAdminNotificationModal, setShowAdminNotificationModal] = useState(false);
+  const [adminNotificationSecondsLeft, setAdminNotificationSecondsLeft] = useState(60);
+  const [adminNotificationVersion, setAdminNotificationVersion] = useState('1.1.0');
+  const [isExecutingUpdateModal, setIsExecutingUpdateModal] = useState(false);
+
   const [selectedPosModal, setSelectedPosModal] = useState<{
     position: PositionRecord;
     action: 'install' | 'replace' | 'history';
@@ -173,6 +179,10 @@ export default function App() {
 
     let unsubData: (() => void) | undefined;
     let unsubStatus: (() => void) | undefined;
+    let unsubAdminUpdateInitiated: (() => void) | undefined;
+    let unsubAdminUpdateCountdown: (() => void) | undefined;
+    let unsubAdminUpdateCancelled: (() => void) | undefined;
+    let unsubExecuteAutoUpdateNow: (() => void) | undefined;
 
     if (window.electronAPI) {
       if (window.electronAPI.onNetworkDataChanged) {
@@ -189,11 +199,44 @@ export default function App() {
           }
         });
       }
+      if (window.electronAPI.onAdminUpdateInitiated) {
+        unsubAdminUpdateInitiated = window.electronAPI.onAdminUpdateInitiated((payload: any) => {
+          setShowAdminNotificationModal(true);
+          setAdminNotificationSecondsLeft(payload.secondsLeft || 60);
+          setAdminNotificationVersion(payload.version || '1.1.0');
+          setIsExecutingUpdateModal(false);
+        });
+      }
+      if (window.electronAPI.onAdminUpdateCountdown) {
+        unsubAdminUpdateCountdown = window.electronAPI.onAdminUpdateCountdown((payload: any) => {
+          setAdminNotificationSecondsLeft(payload.secondsLeft);
+        });
+      }
+      if (window.electronAPI.onAdminUpdateCancelled) {
+        unsubAdminUpdateCancelled = window.electronAPI.onAdminUpdateCancelled((payload: any) => {
+          setShowAdminNotificationModal(false);
+          alert(`Update Cancelled: ${payload.error || 'Pre-update safety backup failed.'}`);
+        });
+      }
+      if (window.electronAPI.onExecuteAutoUpdateNow) {
+        unsubExecuteAutoUpdateNow = window.electronAPI.onExecuteAutoUpdateNow(async () => {
+          setIsExecutingUpdateModal(true);
+          setShowAdminNotificationModal(false);
+          setShowUpdaterModal(true);
+          if (window.electronAPI.startAutoUpdate) {
+            await window.electronAPI.startAutoUpdate();
+          }
+        });
+      }
     }
 
     return () => {
       if (unsubData) unsubData();
       if (unsubStatus) unsubStatus();
+      if (unsubAdminUpdateInitiated) unsubAdminUpdateInitiated();
+      if (unsubAdminUpdateCountdown) unsubAdminUpdateCountdown();
+      if (unsubAdminUpdateCancelled) unsubAdminUpdateCancelled();
+      if (unsubExecuteAutoUpdateNow) unsubExecuteAutoUpdateNow();
     };
   }, []);
 
@@ -1358,6 +1401,16 @@ export default function App() {
         isOpen={showUpdaterModal}
         isPostUpdateWelcome={isPostUpdateWelcome}
         onClose={() => setShowUpdaterModal(false)}
+      />
+
+      <AdminUpdateNotificationModal
+        isOpen={showAdminNotificationModal}
+        secondsLeft={adminNotificationSecondsLeft}
+        version={adminNotificationVersion}
+        isExecutingUpdate={isExecutingUpdateModal}
+        onSaveAndReady={() => {
+          setIsExecutingUpdateModal(true);
+        }}
       />
     </div>
   );
