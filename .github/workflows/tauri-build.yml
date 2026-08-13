@@ -32,7 +32,9 @@ jobs:
           targets: x86_64-pc-windows-msvc
 
       - name: Install app dependencies
-        run: npm ci
+        shell: bash
+        run: |
+          npm install
 
       - name: Build frontend
         run: npm run build
