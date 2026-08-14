@@ -154,6 +154,15 @@ function logToFile(level: string, message: string) {
   }
 }
 
+// Global exception handlers to prevent Windows message box crashes on transient IO/watcher errors
+process.on('uncaughtException', (err: any) => {
+  logToFile('error', `Uncaught Exception in main process: ${err?.stack || err?.message || err}`);
+});
+
+process.on('unhandledRejection', (reason: any) => {
+  logToFile('error', `Unhandled Promise Rejection: ${reason?.stack || reason?.message || reason}`);
+});
+
 logToFile('info', 'Application main process starting...');
 logToFile('info', `Packaged: ${app.isPackaged}`);
 logToFile('info', `PORTABLE_EXECUTABLE_DIR env: ${process.env.PORTABLE_EXECUTABLE_DIR || 'not defined'}`);
@@ -610,6 +619,17 @@ function setupDbFileWatcher() {
         if (eventType === 'change') {
           checkForExternalChanges();
         }
+      });
+
+      // Attach error handler to prevent Uncaught Exception: Error: UNKNOWN: unknown error, watch
+      dbFileWatcher.on('error', (err: any) => {
+        logToFile('warn', `dbFileWatcher error for ${targetPath}: ${err?.message || err}`);
+        try {
+          if (dbFileWatcher) {
+            dbFileWatcher.close();
+            dbFileWatcher = null;
+          }
+        } catch (e) {}
       });
     } catch (e) {
       logToFile('warn', `Failed to attach fs.watch to ${targetPath}: ${e}`);

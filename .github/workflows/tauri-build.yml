@@ -22,7 +22,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'npm'
 
       - name: Install Rust stable
@@ -34,7 +34,7 @@ jobs:
       - name: Install app dependencies
         shell: bash
         run: |
-          npm install
+          npm install --include=optional
 
       - name: Build frontend
         shell: bash
@@ -42,7 +42,13 @@ jobs:
           CI: false
           NODE_ENV: production
         run: |
+          node --version
+          npm --version
+          npm run
+          dir
           npm run build
+          dir
+          dir dist
 
       - name: Build Tauri Windows App
         shell: bash
