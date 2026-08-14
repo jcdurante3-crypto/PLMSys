@@ -25,20 +25,17 @@ jobs:
           node-version: 22
           cache: 'npm'
 
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
-          targets: x86_64-pc-windows-msvc
-
       - name: Install app dependencies
         shell: bash
         run: |
           node -v
           npm -v
-          dir
-          npm install --include=optional
-          dir
+          npm ci
+
+      - name: Run TypeScript check
+        shell: bash
+        run: |
+          npx tsc --noEmit
 
       - name: Build frontend
         shell: bash
@@ -46,12 +43,14 @@ jobs:
           CI: false
           NODE_ENV: production
         run: |
-          node -v
-          npm -v
-          dir
           npm run build
-          dir
-          dir dist
+          ls -la dist
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: x86_64-pc-windows-msvc
 
       - name: Check Rust Tauri backend
         shell: bash
@@ -82,3 +81,4 @@ jobs:
             src-tauri/target/release/bundle/msi/*.msi
             src-tauri/target/release/bundle/**/*
           if-no-files-found: warn
+
