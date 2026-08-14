@@ -17,9 +17,13 @@
     "jsx": "react-jsx",
     "paths": {
       "@/*": [
-        "./*"
+        "./src/*"
       ]
     },
     "noEmit": false
-  }
+  },
+  "include": [
+    "src",
+    "vite.config.ts"
+  ]
 }
