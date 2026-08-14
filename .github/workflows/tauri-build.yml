@@ -19,48 +19,63 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Setup Node.js 22 LTS
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: 'npm'
 
-      - name: Install app dependencies
+      - name: Install dependencies (npm install --include=optional)
         shell: bash
         run: |
+          echo "=== Node.js & NPM Version Diagnostics ==="
           node -v
           npm -v
-          npm ci
+          echo "=== Installing Dependencies ==="
+          npm install --include=optional
+          echo "=== Dependency Diagnostics ==="
+          npm list --depth=0 || true
 
-      - name: Run TypeScript check
+      - name: TypeScript Check (npx tsc --noEmit)
         shell: bash
         run: |
+          echo "=== Running TypeScript Check ==="
           npx tsc --noEmit
 
-      - name: Build frontend
+      - name: Build frontend (npm run build)
         shell: bash
         env:
           CI: false
           NODE_ENV: production
         run: |
+          echo "=== Building Frontend with Vite ==="
           npm run build
+          echo "=== Verifying Generated Distribution Files in dist/ ==="
           ls -la dist
 
-      - name: Install Rust stable
+      - name: Install MSVC Build Tools & Rust Stable
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
           targets: x86_64-pc-windows-msvc
 
+      - name: Install Tauri CLI
+        shell: bash
+        run: |
+          echo "=== Installing Tauri CLI ==="
+          cargo install tauri-cli --version "^2.0.0" --locked || true
+
       - name: Check Rust Tauri backend
         shell: bash
         working-directory: src-tauri
         run: |
+          echo "=== Rust & Cargo Diagnostics ==="
           rustc -V
           cargo -V
+          echo "=== Cargo Check ==="
           cargo check --verbose
 
-      - name: Build Tauri Windows App
+      - name: Build Tauri Windows Application (cargo tauri build)
         shell: bash
         env:
           CI: false
@@ -69,7 +84,8 @@ jobs:
           RUST_LOG: debug
           CARGO_TERM_VERBOSE: true
         run: |
-          npx tauri build --verbose
+          echo "=== Building Windows Executable via cargo tauri build ==="
+          cargo tauri build --verbose || npx tauri build --verbose
 
       - name: Upload Windows Artifacts
         uses: actions/upload-artifact@v4
@@ -81,4 +97,3 @@ jobs:
             src-tauri/target/release/bundle/msi/*.msi
             src-tauri/target/release/bundle/**/*
           if-no-files-found: warn
-
