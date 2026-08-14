@@ -46,6 +46,12 @@
     "vite": "^6.2.3",
     "wait-on": "^8.0.2"
   },
+  "optionalDependencies": {
+    "@esbuild/win32-x64": "^0.25.0",
+    "@rollup/rollup-win32-x64-msvc": "^4.30.0",
+    "@tailwindcss/oxide-win32-x64-msvc": "^4.0.0",
+    "@tauri-apps/cli-win32-x64-msvc": "^2.0.0"
+  },
   "build": {
     "appId": "com.plm.system",
     "productName": "Plate Lifecycle Monitoring System",
